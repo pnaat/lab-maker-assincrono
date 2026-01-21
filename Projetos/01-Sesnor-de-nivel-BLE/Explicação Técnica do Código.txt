@@ -1,0 +1,22 @@
+Explicação Técnica do Código
+NimBLE Stack: Diferente do Arduino, no ESP-IDF o BLE é "orientado a eventos". O serviço é definido na struct gatt_svcs. Quando você conecta um App (como o nRF Connect), ele chama a função device_read para buscar o valor.
+Processamento de Médias: No loop da sensor_task, tiramos 10 amostras rápidas do ADC para evitar que o "balanço" do combustível (ou ruído do potenciômetro) gere alertas falsos.
+Lógica de Consumo:
+	Armazenamos o ultimo_nivel.
+	consumo_no_intervalo: Se o valor for positivo, houve descida do nível.
+	Alerta: Se esse consumo for 20% maior que a média histórica (consumo_medio_hora * 1.2), o LED no GPIO 2 acende.
+Calibração: O ADC do ESP32-S3 tem resolução de 12 bits ($2^{12} = 4096$). A fórmula (raw * 100) / 4095 mapeia isso perfeitamente para a escala percentual.
+
+O que mudou e por que é importante:
+Média Móvel Exponencial: Em vez de uma média simples, usei consumo_medio = (media * 0.9 + atual * 0.1). Isso dá peso aos dados históricos, mas permite que o sensor se adapte a mudanças graduais de comportamento sem "pular" com qualquer ruído.
+
+Persistência com NVS: As funções salvar_consumo_nvs e carregar_consumo_nvs garantem que o aprendizado do sensor sobreviva a um desligamento. O consumo médio é tratado como um "blob" (binário) para facilitar o armazenamento do tipo float.
+
+Filtro de Oscilação: Adicionei if (consumo_detectado > 0.05). Isso evita que pequenas variações elétricas no potenciômetro sejam contabilizadas como consumo real quando o tanque está parado.
+
+Como testar:
+Conexão: Use o app nRF Connect (Android/iOS). Procure por "Tanque_Smart_S3".
+
+Leitura: Clique na característica e ative as notificações. Você verá uma string como: N:85.5%|C:0.12|A:0.
+
+Simulação de Alerta: Deixe o potenciômetro parado por 3 ou 4 ciclos para estabilizar a média. Depois, gire-o rapidamente para baixo (simulando vazamento). O LED deve acender e o campo A no Bluetooth mudará para 1.
