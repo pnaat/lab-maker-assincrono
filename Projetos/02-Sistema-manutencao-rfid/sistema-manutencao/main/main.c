@@ -7,6 +7,7 @@
 #include "nvs_flash.h"
 #include "driver/gpio.h"
 #include "driver/spi_master.h"
+#include "driver/i2c.h"
 #include "ssd1306.h"
 #include "rc522.h"
 #include "driver/rc522_spi.h"
@@ -26,6 +27,12 @@ static const char *TAG = "SISTEMA_MANUTENCAO";
 // Pinagem Heltec V3
 #define OLED_RST          21
 #define VEXT_CTRL         18 
+
+#define I2C_MASTER_NUM      I2C_NUM_0
+#define I2C_SDA_IO          4     
+#define I2C_SCL_IO          15    
+#define I2C_MASTER_FREQ_HZ  40000
+
 #define RFID_MISO         11
 #define RFID_MOSI         10
 #define RFID_SCK          9
@@ -42,7 +49,56 @@ static rc522_handle_t rfid_scanner;
 static EventGroupHandle_t s_wifi_event_group;
 static const int WIFI_CONNECTED_BIT = BIT0;
 
-// ===================== Tempo (SNTP/NTP)=====================
+// ===================== OLED =====================
+
+// Liga a alimentação do OLED na Heltec (VEXT = 3V3 periféricos)
+static void heltec_vext_enable(void) {
+    gpio_config_t io = {
+        .pin_bit_mask = 1ULL << VEXT_CTRL,
+        .mode = GPIO_MODE_OUTPUT,
+        .pull_up_en = GPIO_PULLUP_DISABLE,
+        .pull_down_en = GPIO_PULLDOWN_DISABLE,
+        .intr_type = GPIO_INTR_DISABLE
+    };
+    gpio_config(&io);
+    gpio_set_level(VEXT_CTRL, 1); // energiza OLED
+    vTaskDelay(pdMS_TO_TICKS(10)); // estabilização
+}
+
+// Inicializa I2C e cria o handle do SSD1306 (lib espressif/ssd1306)
+static void oled_init_heltec(void) {
+    heltec_vext_enable();
+
+    i2c_config_t conf = {
+        .mode = I2C_MODE_MASTER,
+        .sda_io_num = (gpio_num_t)I2C_SDA_IO,
+        .sda_pullup_en = GPIO_PULLUP_ENABLE,
+        .scl_io_num = (gpio_num_t)I2C_SCL_IO,
+        .scl_pullup_en = GPIO_PULLUP_ENABLE,
+#if ESP_IDF_VERSION >= ESP_IDF_VERSION_VAL(5, 0, 0)
+        .clk_flags = I2C_SCLK_SRC_FLAG_FOR_NOMAL,
+#endif
+    };
+    conf.master.clk_speed = I2C_MASTER_FREQ_HZ;
+
+    ESP_ERROR_CHECK(i2c_param_config(I2C_MASTER_NUM, &conf));
+    ESP_ERROR_CHECK(i2c_driver_install(I2C_MASTER_NUM, conf.mode, 0, 0, 0));
+
+    // A lib cria o display pelo número da porta I2C + endereço padrão (0x3C)
+    oled = ssd1306_create(I2C_MASTER_NUM, SSD1306_I2C_ADDRESS); // conforme README da lib
+    if (oled == NULL) {
+        ESP_LOGE(TAG, "Falha ao criar handle do SSD1306");
+    }
+
+    // Tela inicial
+    ssd1306_clear_screen(oled, 0x00);
+    ssd1306_draw_string(oled, 0, 0,  (const uint8_t*)"Iniciando...", 12, 1);
+    ssd1306_draw_string(oled, 0, 20, (const uint8_t*)"Wi-Fi...",      12, 1);
+    ssd1306_refresh_gram(oled);
+
+}
+
+// ===================== Tempo (SNTP/NTP) =====================
 static void time_init_sntp(void) {
     // Timezone Brasil: São Paulo (considera DST histórico automaticamente)
     setenv("TZ", "America/Sao_Paulo", 1);
@@ -63,6 +119,7 @@ static void time_init_sntp(void) {
         }
         vTaskDelay(pdMS_TO_TICKS(1000));
     }
+
 }
 
 static void get_timestamp_str(char *out, size_t out_len) {
@@ -266,13 +323,16 @@ void app_main(void) {
     }
     esp_event_loop_create_default();
 
-    // 2. Wi-Fi 
+    // 2. Inicializar OLED
+    oled_init_heltec();
+
+    // 3. Wi-Fi 
     wifi_init_sta();
 
-    // Iniciar SNTP para timestamp
+    // 4. Iniciar SNTP para timestamp
     time_init_sntp();
 
-    // 3. Inicializar Driver RC522 
+    // 5. Inicializar Driver RC522 
     rc522_spi_config_t spi_config = {
         .host_id = SPI2_HOST,
         .bus_config = &(spi_bus_config_t){
@@ -289,7 +349,7 @@ void app_main(void) {
     rc522_spi_create(&spi_config, &rfid_driver);
     rc522_driver_install(rfid_driver);
 
-    // 4. Inicializar Scanner
+    // 6. Inicializar Scanner
     rc522_config_t scanner_config = {
         .driver = rfid_driver,
     };
