@@ -1,0 +1,35 @@
+Sistema de controle de qualidade de enchimento (Ultrassônico) - Pela medida da distancia separar pelo nivel 
+
+Sistema Anti-Furto (MPU6050 + GPS)
+
+"Caixa preta" em Empilhadeiras
+Problema real: colisões e uso indevido de empilhadeiras.
+Componentes: MPU6050 + GPS + microSD
+Função: registra impactos, acelerações acima do permitido e localização dentro do pátio.
+
+Monitoramento de temperatura de quadros Elétricos (Hot Spot)
+Problema real: aquecimento de disjuntores de força.
+Componentes: NTC 10k + ESP32
+Função: mede temperatura e envia alerta de hotspot.
+
+Sistema de Alarme de Porta Aberta em Câmara Fria
+Problema real: perda de refrigeração por porta aberta.
+Componentes: fim de curso + ESP32
+Função: alarme sonoro + registro online
+
+Gateway Modbus ↔ MqTT para Máquinas Antigas
+Problema real: máquinas legadas não têm IoT.
+Componentes: RS485 + ESP32
+
+Detecção de falhas em motores por vibração (MPU6050 + CNN/TinyML)
+
+Análise de consumo anômalo de Água OU Corrente — Sensor YF-S201 (sensor de fluxo + IA)
+
+----------
+Sensor de Distância para Estacionamento (Ultrassônico)
+
+Classificação de ruídos anormais (microfone INMP441 + IA)
+
+Gateway LoRa ↔ MqTT
+Componentes: ESP32
+
