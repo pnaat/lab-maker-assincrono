@@ -12,12 +12,12 @@ Problema real: aquecimento de disjuntores de força.
 Componentes: NTC 10k + ESP32
 Função: mede temperatura e envia alerta de hotspot.
 
-Sistema de Alarme de Porta Aberta em Câmara Fria
+Iniciado - Sistema de Alarme de Porta Aberta em Câmara Fria
 Problema real: perda de refrigeração por porta aberta.
 Componentes: fim de curso + ESP32
 Função: alarme sonoro + registro online
 
-Gateway Modbus ↔ MqTT para Máquinas Antigas
+Iniciado - Gateway Modbus ↔ MqTT para Máquinas Antigas
 Problema real: máquinas legadas não têm IoT.
 Componentes: RS485 + ESP32
 
