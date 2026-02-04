@@ -12,8 +12,3 @@ Conectividade: Servidor GATT BLE para exposição de características de nível 
 
 Interface Física: Saída digital para indicação visual de alerta (LED).
 
-Cronograma de Desenvolvimento:
-
-Fase 1 (MVP): Calibração de leitura analógica e transmissão básica via BLE.
-
-Fase 2 (Advanced): Implementação de lógica de janelas temporais, cálculo de médias e algoritmos de detecção de anomalias (vazamento/alto consumo).
