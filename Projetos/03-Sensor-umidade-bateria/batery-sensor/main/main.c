@@ -52,7 +52,7 @@ static const char *SLEEPTAG = "SLEEP_WAKEUP";
 #define WAKEUP_TIMEOUT 10
 static RTC_DATA_ATTR struct timeval sleep_enter_time;
 
-static const char TEMPDATA[] = "";
+static char TEMPDATA[32] = {0};;
 #define MAX_DEVICES         8
 #define SAMPLE_PERIOD       1000 // ms
 
@@ -214,40 +214,38 @@ void Publisher_Task()
     com_rslt += bme280_set_power_mode(BME280_NORMAL_MODE);
     if (com_rslt == SUCCESS)
     {
-        while (true)
-        {
-            vTaskDelay(40 / portTICK_PERIOD_MS);
+      vTaskDelay(40 / portTICK_PERIOD_MS);
 
-            com_rslt = bme280_read_uncomp_pressure_temperature_humidity(
-                &v_uncomp_pressure_s32, &v_uncomp_temperature_s32, &v_uncomp_humidity_s32);
+      com_rslt = bme280_read_uncomp_pressure_temperature_humidity(
+          &v_uncomp_pressure_s32, &v_uncomp_temperature_s32, &v_uncomp_humidity_s32);
 
-            double temp = bme280_compensate_temperature_double(v_uncomp_temperature_s32);
-            char temperature[12];
-            sprintf(temperature, "%.2f degC", temp);
+      double temp = bme280_compensate_temperature_double(v_uncomp_temperature_s32);
+      char temperature[12];
+      sprintf(temperature, "%.2f degC", temp);
 
-            double press = bme280_compensate_pressure_double(v_uncomp_pressure_s32) / 100; // Pa -> hPa
-            char pressure[10];
-            sprintf(pressure, "%.2f hPa", press);
+      double press = bme280_compensate_pressure_double(v_uncomp_pressure_s32) / 100; // Pa -> hPa
+      char pressure[10];
+      sprintf(pressure, "%.2f hPa", press);
 
-            double hum = bme280_compensate_humidity_double(v_uncomp_humidity_s32);
-            char humidity[10];
-            sprintf(humidity, "%.2f %%", hum);
+      double hum = bme280_compensate_humidity_double(v_uncomp_humidity_s32);
+      char humidity[10];
+      sprintf(humidity, "%.2f %%", hum);
 
-            if (com_rslt == SUCCESS)
-            {
-                if (MQTT_CONNEECTED)
-                {
-                    esp_mqtt_client_publish(client, MQTT_PUB_TEMP_BME280, temperature, 0, 0, 0);
-                    esp_mqtt_client_publish(client, MQTT_PUB_PRES_BME280, pressure, 0, 0, 0);
-                    esp_mqtt_client_publish(client, MQTT_PUB_HUM_BME280, humidity, 0, 0, 0);
-                    vTaskDelay(5000 / portTICK_PERIOD_MS);
-                }
-            }
-            else
-            {
-                ESP_LOGE(TAG_BME280, "measure error. code: %d", com_rslt);
-            }
-        }
+      if (com_rslt == SUCCESS)
+      {
+          if (MQTT_CONNEECTED)
+          {
+              esp_mqtt_client_publish(client, MQTT_PUB_TEMP_BME280, temperature, 0, 0, 0);
+              esp_mqtt_client_publish(client, MQTT_PUB_PRES_BME280, pressure, 0, 0, 0);
+              esp_mqtt_client_publish(client, MQTT_PUB_HUM_BME280, humidity, 0, 0, 0);
+              vTaskDelay(5000 / portTICK_PERIOD_MS);
+          }
+      }
+      else
+      {
+          ESP_LOGE(TAG_BME280, "measure error. code: %d", com_rslt);
+      }
+        
     }
     else
     {
@@ -256,7 +254,50 @@ void Publisher_Task()
 }
 
 static void read_temperature_sensor() {
-  //implementar
+    struct bme280_t bme280 = {
+        .bus_read   = BME280_I2C_bus_read,
+        .dev_addr   = BME280_I2C_ADDRESS1,
+        .delay_msec = BME280_delay_msek
+    };
+
+    s32 com_rslt;
+    s32 v_uncomp_pressure_s32 = 0;
+    s32 v_uncomp_temperature_s32 = 0;
+    s32 v_uncomp_humidity_s32 = 0;
+
+    // Inicializa o BME280
+    com_rslt = bme280_init(&bme280);
+
+    // Mantive as mesmas configs usadas no seu Publisher_Task()
+    com_rslt += bme280_set_oversamp_pressure(BME280_OVERSAMP_16X);
+    com_rslt += bme280_set_oversamp_temperature(BME280_OVERSAMP_2X);
+    com_rslt += bme280_set_oversamp_humidity(BME280_OVERSAMP_1X);
+    com_rslt += bme280_set_standby_durn(BME280_STANDBY_TIME_1_MS);
+    com_rslt += bme280_set_filter(BME280_FILTER_COEFF_16);
+    com_rslt += bme280_set_power_mode(BME280_NORMAL_MODE);
+
+    if (com_rslt != SUCCESS) {
+        ESP_LOGE(TAG_BME280, "BME280 init/config error. code: %d", com_rslt);
+        snprintf(TEMPDATA, sizeof(TEMPDATA), "N/A");
+        return;
+    }
+
+    // Aguardinha curta para conversão
+    vTaskDelay(40 / portTICK_PERIOD_MS);
+
+    // Leitura não compensada e compensação
+    com_rslt = bme280_read_uncomp_pressure_temperature_humidity(
+        &v_uncomp_pressure_s32, &v_uncomp_temperature_s32, &v_uncomp_humidity_s32);
+
+    if (com_rslt != SUCCESS) {
+        ESP_LOGE(TAG_BME280, "measure error. code: %d", com_rslt);
+        snprintf(TEMPDATA, sizeof(TEMPDATA), "N/A");
+        return;
+    }
+
+    double temp_c = bme280_compensate_temperature_double(v_uncomp_temperature_s32);
+    // Grava no buffer TEMPDATA para o log existente na connected_task
+    snprintf(TEMPDATA, sizeof(TEMPDATA), "%.2f degC", temp_c);
 }
 
 /**

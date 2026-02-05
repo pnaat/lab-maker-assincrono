@@ -1,7 +1,7 @@
 {
     "version":            "1.2",
     "project_name":       "batery-sensor",
-    "project_version":    "ba43ec0-dirty",
+    "project_version":    "230c72d-dirty",
     "project_path":       "C:/Users/saojosan/Documents/Lab Maker/lab-maker-assincrono/Projetos/03-Sensor-umidade-bateria/batery-sensor",
     "idf_path":           "C:/Users/saojosan/esp/v5.5.2/esp-idf",
     "build_dir":          "C:/Users/saojosan/Documents/Lab Maker/lab-maker-assincrono/Projetos/03-Sensor-umidade-bateria/batery-sensor/build",
