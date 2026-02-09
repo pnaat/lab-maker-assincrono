@@ -1,24 +1,49 @@
-# Implementar filtros digitais no ESP32 usando o ESP-IDF
+# 📘 Projeto: *[Título do Projeto]* — Aplicação de [CONCEITO] 
 
 ---
 
-## Quando usar cada um?
+## Overview
+Descrever de forma clara **o que o projeto faz** e **qual conceito será aplicado**.
 
-### 1. SMA (Simple Moving Average)
+> **Exemplo:**  
+Este projeto demonstra como aplicar **[CONCEITO]** para **[FINALIDADE]** utilizando a **ESP32‑S3 Heltec V3** com **ESP‑IDF**. O foco é implementar [ex.: um filtro EMA para suavizar leituras de temperatura / um ISR para medição precisa de RPM / comunicação SPI com sensor de vibração / MQTT QoS2 para alarmes críticos].
 
-O SMA trata todos os pontos da "janela" com o mesmo peso. É como olhar para o espelho retrovisor: ele te dá uma média exata do que aconteceu nos últimos segundos.
+> **Exemplo:**  
+The assignment requires the creation of an alarm component, refactoring the original application code to use this new module, and making certain internal thresholds configurable via menuconfig.
+The alarm system simulates an event that has a configurable probability of being triggered at a given interval.
 
-* **Utilização:** Ideal para remover ruídos de alta frequência onde você não se importa com um pequeno atraso (lag) na resposta.
-* **Exemplo:** Medir a temperatura de um tanque de água. A temperatura não muda bruscamente, então você pode tirar a média dos últimos 10 minutos para ignorar variações momentâneas de leitura.
-> **Aplicação:** `Media_Final = (Temp1 + Temp2 + ... + Temp10) / 10`
+---
+
+## Componente
+
+> **Exemplo:**
+The `alarm` component exposes the following functions:
+
+```c
+alarm_t *alarm_create(void);
+bool is_alarm_set(alarm_t *alarm);
+void alarm_delete(alarm_t *alarm);
+```
+
+* `alarm_create()`: Initializes internal state.
+* `is_alarm_set()`: Returns `true` if the alarm is active based on random evaluation and time interval.
+* `alarm_delete()`: Frees allocated memory.
+
+---
+
+## Exemplo de Uso
+
+### Example Behavior
+
+The `is_alarm_set()` function checks if a time interval (configurable via `CONFIG_ALARM_REFRESH_INTERVAL_MS`) has passed since the last evaluation. If so, a new random value is generated and compared to `CONFIG_ALARM_THRESHOLD_PERCENT` to determine whether the alarm should be set.
+
+The state is updated only once per interval, reducing redundant random evaluations and ensuring consistent behavior.
+
+### Código-Fonte
+```c
+// Exemplo EMA
+float ema = 0;
+ema = alpha * leitura + (1 - alpha) * ema;
+```
 
 
-
-### 2. EMA (Exponential Moving Average)
-
-O EMA dá mais peso aos dados mais recentes. Ele reage mais rápido a mudanças bruscas do que o SMA, mas ainda assim mantém a suavidade.
-
-* **Utilização:** Ótimo para sistemas que precisam de resposta rápida, mas ainda precisam de estabilidade. Ocupa **menos memória** (não precisa guardar um array/buffer).
-* **Exemplo:** Um sensor de nível em um robô equilibrista. Você precisa saber a inclinação *agora*, mas quer filtrar a vibração dos motores.
-> **Aplicação:** `Valor_Atualizado = 0.2 * Leitura_Nova + 0.8 * Valor_Antigo`
-?
