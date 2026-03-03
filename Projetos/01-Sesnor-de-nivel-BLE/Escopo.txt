@@ -2,6 +2,12 @@ Título: Desenvolvimento de Módulo de Telemetria BLE para Gestão de Reservató
 
 Objetivo: Desenvolver um sistema embarcado baseado no SoC ESP32-S3 para monitoramento de nível de tanques de combustível/água. O sistema deve coletar dados analógicos de um sensor de nível (emulado por potenciômetro), processar os dados localmente e disponibilizá-los via protocolo Bluetooth Low Energy (BLE).
 
+Material necessario:
+1 - LED 
+1 - resistor 1K
+1 - Potênciometro/Trimpot de 10K
+
+
 Requisitos Funcionais:
 
 Coleta de Dados: Leitura de sinal analógico via ADC (12 bits) com filtragem de ruído.
