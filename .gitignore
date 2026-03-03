@@ -17,8 +17,6 @@ temp/
 RemoteSystemsTempFiles/
 .pio
 build*
-.DS_Store
-
 
 # Precompiled Headers
 *.gch
@@ -90,6 +88,4 @@ Thumbs.db
 *.old
 *.zip
 *.7z
-
-*.lock
 
