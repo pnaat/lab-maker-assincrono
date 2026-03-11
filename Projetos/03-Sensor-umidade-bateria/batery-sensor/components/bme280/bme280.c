@@ -97,7 +97,7 @@ BME280_RETURN_FUNCTION_TYPE bme280_init(struct bme280_t *bme280)
 												  BME280_CHIP_ID_REG, &v_data_u8,
 												  BME280_GEN_READ_WRITE_DATA_LENGTH);
 		/* Check for the correct chip id */
-		if (v_data_u8 == BME280_CHIP_ID)
+		if (v_data_u8 == BME280_CHIP_ID || v_data_u8 == BMP280_CHIP_ID)
 			break;
 		v_chip_id_read_count--;
 		/* Delay added concerning the low speed of power up system to

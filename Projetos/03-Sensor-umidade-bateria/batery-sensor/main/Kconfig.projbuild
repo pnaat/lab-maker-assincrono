@@ -1,0 +1,38 @@
+menu "Example Configuration"
+    config BME280_SDA_GPIO
+	int "bme280 sda gpio"
+        default 19
+	help
+	    SDA gpio used to communicate with sensor via i2c
+
+    config BME280_SCL_GPIO
+        int "bme280 scl gpio"
+        default 20
+	help
+	    SCL gpio used to communicate with sensor via i2c
+
+    config ESP_WIFI_SSID
+	string "Wifi SSID"
+	help
+	    SSID of wifi network to be used
+
+    config ESP_WIFI_PASS
+	string "Wifi Password"
+	help
+	    Password of wifi network to be used
+
+    config ESP_MQTT_URL
+        string "Mqtt url"
+        help
+            Mqtt url using format: mqtt://ip_address:port_number
+
+    config ESP_MQTT_USER
+        string "MQTT user"
+        help
+            User used For MQTT authentication.
+
+    config ESP_MQTT_PASS
+        string "MQTT password"
+        help
+            User password used in authentication.
+endmenu

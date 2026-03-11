@@ -488,7 +488,7 @@ BME280_BUS_RD_PARAM_TYPE to function calls used inside the API
 /**\name	CHIP ID DEFINITIONS  */
 /***************************************************/
 #define BME280_CHIP_ID                  (0x60)
-
+#define BMP280_CHIP_ID                  (0x58)
 /****************************************************/
 /**\name	I2C ADDRESS DEFINITIONS  */
 /***************************************************/

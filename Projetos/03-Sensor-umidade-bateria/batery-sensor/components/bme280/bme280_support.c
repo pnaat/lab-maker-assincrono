@@ -331,12 +331,14 @@ s8 SPI_routine(void) {
 s8 BME280_I2C_bus_write(u8 dev_addr, u8 reg_addr, u8 *reg_data, u8 cnt)
 {
 	s32 iError = BME280_INIT_VALUE;
+    #if 0
 	u8 array[I2C_BUFFER_LEN];
 	u8 stringpos = BME280_INIT_VALUE;
 	array[BME280_INIT_VALUE] = reg_addr;
 	for (stringpos = BME280_INIT_VALUE; stringpos < cnt; stringpos++) {
 		array[stringpos + BME280_DATA_INDEX] = *(reg_data + stringpos);
 	}
+	#endif
 	/*
 	* Please take the below function as your reference for
 	* write the data using I2C communication
@@ -365,6 +367,7 @@ s8 BME280_I2C_bus_write(u8 dev_addr, u8 reg_addr, u8 *reg_data, u8 cnt)
 s8 BME280_I2C_bus_read(u8 dev_addr, u8 reg_addr, u8 *reg_data, u8 cnt)
 {
 	s32 iError = BME280_INIT_VALUE;
+	#if 0
 	u8 array[I2C_BUFFER_LEN] = {BME280_INIT_VALUE};
 	u8 stringpos = BME280_INIT_VALUE;
 	array[BME280_INIT_VALUE] = reg_addr;
@@ -380,6 +383,7 @@ s8 BME280_I2C_bus_read(u8 dev_addr, u8 reg_addr, u8 *reg_data, u8 cnt)
 	for (stringpos = BME280_INIT_VALUE; stringpos < cnt; stringpos++) {
 		*(reg_data + stringpos) = array[stringpos];
 	}
+	#endif
 	return (s8)iError;
 }
 
@@ -432,6 +436,7 @@ s8 BME280_SPI_bus_read(u8 dev_addr, u8 reg_addr, u8 *reg_data, u8 cnt)
 s8 BME280_SPI_bus_write(u8 dev_addr, u8 reg_addr, u8 *reg_data, u8 cnt)
 {
 	s32 iError = BME280_INIT_VALUE;
+	#if 0
 	u8 array[SPI_BUFFER_LEN * BME280_ADDRESS_INDEX];
 	u8 stringpos = BME280_INIT_VALUE;
 	u8 index = BME280_INIT_VALUE;
@@ -451,6 +456,7 @@ s8 BME280_SPI_bus_write(u8 dev_addr, u8 reg_addr, u8 *reg_data, u8 cnt)
 	 * In the driver SUCCESS defined as 0
 	 * and FAILURE defined as -1
 	 */
+	#endif
 	return (s8)iError;
 }
 
