@@ -48,7 +48,7 @@ static int s_retry_num = 0;
 #define MQTT_PUB_PRES_BME280 "bme280/pressure"
 
 #ifndef CONFIG_BME280_SDA_GPIO
-    #define SDA_PIN     20
+    #define SDA_PIN     21
 #else
     #define SDA_PIN     CONFIG_BME280_SDA_GPIO
 #endif
@@ -76,6 +76,16 @@ static char TEMPDATA[32] = {0};
 #define I2C_MASTER_FREQ_HZ  100000
 #define BME280_SENSOR_ADDR  BME280_I2C_ADDRESS2
 
+static s8 BME280_I2C_bus_write(u8 dev_addr, u8 reg_addr, u8 *reg_data, u8 cnt);
+static s8 BME280_I2C_bus_read(u8 dev_addr, u8 reg_addr, u8 *reg_data, u8 cnt);
+static void BME280_delay_msek(u32 msek);
+
+struct bme280_t bme280 = {
+    .bus_write  = BME280_I2C_bus_write,
+    .bus_read   = BME280_I2C_bus_read,
+    .dev_addr   = BME280_SENSOR_ADDR,
+    .delay_msec = BME280_delay_msek
+};
 
 char* LastcharDel(char* name) {
   int i = 0;
@@ -136,7 +146,7 @@ static void mqtt_event_handler(void *handler_args, esp_event_base_t base, int32_
 esp_mqtt_client_handle_t client = NULL;
 static void mqtt_app_start(void)
 {
-    ESP_LOGI(TAG, "STARTING MQTT");
+    ESP_LOGI(TAG, "STARTING MQTT: %s", CONFIG_ESP_MQTT_URL);
     xEventGroupClearBits(s_wifi_event_group, MQTT_CONNECTED_BIT);
 
     esp_mqtt_client_config_t mqttConfig = {0};
@@ -163,10 +173,11 @@ s8 BME280_I2C_bus_write(u8 dev_addr, u8 reg_addr, u8 *reg_data, u8 cnt)
 	i2c_master_write(cmd, reg_data, cnt, true);
 	i2c_master_stop(cmd);
 
-	espRc = i2c_master_cmd_begin(I2C_MASTER_NUM, cmd, 10/portTICK_PERIOD_MS);
+	espRc = i2c_master_cmd_begin(I2C_MASTER_NUM, cmd, 150/portTICK_PERIOD_MS);
 	if (espRc == ESP_OK) {
 		iError = SUCCESS;
 	} else {
+	    ESP_LOGE(TAG, "BME280_I2C_bus_write - i2c_master_cmd_begin error");
 		iError = ESP_FAIL;
 	}
 #if 0
@@ -202,13 +213,14 @@ s8 BME280_I2C_bus_read(u8 dev_addr, u8 reg_addr, u8 *reg_data, u8 cnt)
     i2c_master_read_byte(cmd, reg_data + cnt - 1, I2C_MASTER_NACK);
     i2c_master_stop(cmd);
 
-    esp_err_t espRc = i2c_master_cmd_begin(I2C_MASTER_NUM, cmd, 10 / portTICK_PERIOD_MS);
+    esp_err_t espRc = i2c_master_cmd_begin(I2C_MASTER_NUM, cmd, 150 / portTICK_PERIOD_MS);
     if (espRc == ESP_OK)
     {
         iError = SUCCESS;
     }
     else
     {
+        ESP_LOGE(TAG, "BME280_I2C_bus_read - i2c_master_cmd_begin error");
         iError = ESP_FAIL;
     }
 
@@ -231,135 +243,67 @@ void BME280_delay_msek(u32 msek)
     vTaskDelay(msek / portTICK_PERIOD_MS);
 }
 
+void BME280_start()
+{
+    ESP_ERROR_CHECK(bme280_init(&bme280));
+    ESP_ERROR_CHECK(bme280_set_oversamp_pressure(BME280_OVERSAMP_16X));
+    ESP_ERROR_CHECK(bme280_set_oversamp_temperature(BME280_OVERSAMP_2X));
+    ESP_ERROR_CHECK(bme280_set_oversamp_humidity(BME280_OVERSAMP_1X));
+    ESP_ERROR_CHECK(bme280_set_standby_durn(BME280_STANDBY_TIME_1_MS));
+    ESP_ERROR_CHECK(bme280_set_filter(BME280_FILTER_COEFF_16));
+    ESP_ERROR_CHECK(bme280_set_power_mode(BME280_NORMAL_MODE));
+
+    BME280_delay_msek(40);
+}
+
 void publisher_task()
 {
-    struct bme280_t bme280 = {
-        .bus_write = BME280_I2C_bus_write,
-        .bus_read = BME280_I2C_bus_read,
-        .dev_addr = BME280_SENSOR_ADDR,
-        .delay_msec = BME280_delay_msek
-    };
-
-    s32 com_rslt;
     s32 v_uncomp_pressure_s32;
     s32 v_uncomp_temperature_s32;
     s32 v_uncomp_humidity_s32;
 
-    com_rslt = bme280_init(&bme280);
+    BME280_start();
 
-    com_rslt += bme280_set_oversamp_pressure(BME280_OVERSAMP_16X);
-if (com_rslt != SUCCESS){
-    printf("error1\r\n");}
-    com_rslt += bme280_set_oversamp_temperature(BME280_OVERSAMP_2X);
-if (com_rslt != SUCCESS){
-    printf("error2\r\n");}
-    com_rslt += bme280_set_oversamp_humidity(BME280_OVERSAMP_1X);
-if (com_rslt != SUCCESS){
-    printf("error3\r\n");}
-/*
-    com_rslt += bme280_set_standby_durn(BME280_STANDBY_TIME_1_MS);
-if (com_rslt != SUCCESS){
-    printf("error4\r\n");}*/
-    com_rslt += bme280_set_filter(BME280_FILTER_COEFF_16);
-if (com_rslt != SUCCESS){
-    printf("error5\r\n");}
-    com_rslt += bme280_set_power_mode(BME280_NORMAL_MODE);
-if (com_rslt != SUCCESS){
-    printf("error6\r\n");}
+    ESP_ERROR_CHECK(bme280_read_uncomp_pressure_temperature_humidity(
+          &v_uncomp_pressure_s32, &v_uncomp_temperature_s32, &v_uncomp_humidity_s32));
 
-    if (com_rslt == SUCCESS)
+    double temp = bme280_compensate_temperature_double(v_uncomp_temperature_s32);
+    char temperature[12];
+    sprintf(temperature, "%.2f degC", temp);
+
+    double press = bme280_compensate_pressure_double(v_uncomp_pressure_s32) / 100; // Pa -> hPa
+    char pressure[10];
+    sprintf(pressure, "%.2f hPa", press);
+
+    double hum = bme280_compensate_humidity_double(v_uncomp_humidity_s32);
+    char humidity[10];
+    sprintf(humidity, "%.2f %%", hum);
+
+    EventBits_t bits = xEventGroupWaitBits(s_wifi_event_group, MQTT_CONNECTED_BIT, pdFALSE, pdFALSE, ( TickType_t )1000);
+    if (bits & MQTT_CONNECTED_BIT)
     {
-      vTaskDelay(40 / portTICK_PERIOD_MS);
+        esp_mqtt_client_publish(client, MQTT_PUB_TEMP_BME280, temperature, 0, 0, 0);
+        esp_mqtt_client_publish(client, MQTT_PUB_PRES_BME280, pressure, 0, 0, 0);
+        esp_mqtt_client_publish(client, MQTT_PUB_HUM_BME280, humidity, 0, 0, 0);
 
-      com_rslt = bme280_read_uncomp_pressure_temperature_humidity(
-          &v_uncomp_pressure_s32, &v_uncomp_temperature_s32, &v_uncomp_humidity_s32);
-
-      double temp = bme280_compensate_temperature_double(v_uncomp_temperature_s32);
-      char temperature[12];
-      sprintf(temperature, "%.2f degC", temp);
-
-      double press = bme280_compensate_pressure_double(v_uncomp_pressure_s32) / 100; // Pa -> hPa
-      char pressure[10];
-      sprintf(pressure, "%.2f hPa", press);
-
-      double hum = bme280_compensate_humidity_double(v_uncomp_humidity_s32);
-      char humidity[10];
-      sprintf(humidity, "%.2f %%", hum);
-
-      if (com_rslt == SUCCESS)
-      {
-          EventBits_t bits = xEventGroupWaitBits(s_wifi_event_group, MQTT_CONNECTED_BIT, pdFALSE, pdFALSE, ( TickType_t )1000);
-          if (bits & MQTT_CONNECTED_BIT)
-          {
-              esp_mqtt_client_publish(client, MQTT_PUB_TEMP_BME280, temperature, 0, 0, 0);
-              esp_mqtt_client_publish(client, MQTT_PUB_PRES_BME280, pressure, 0, 0, 0);
-              esp_mqtt_client_publish(client, MQTT_PUB_HUM_BME280, humidity, 0, 0, 0);
-
-              vTaskDelay(5000 / portTICK_PERIOD_MS);
-          }
-      }
-      else
-      {
-          ESP_LOGE(TAG_BME280, "measure error. code: %d", com_rslt);
-      }
-
-    }
-    else
-    {
-        ESP_LOGE(TAG_BME280, "init or setting error. code: %d", com_rslt);
+        BME280_delay_msek(5000);
     }
 }
 
 static void read_temperature_sensor() {
-    struct bme280_t bme280 = {
-        .bus_write  = BME280_I2C_bus_write,
-        .bus_read   = BME280_I2C_bus_read,
-        .dev_addr   = BME280_SENSOR_ADDR,
-        .delay_msec = BME280_delay_msek
-    };
 
-    s32 com_rslt;
     s32 v_uncomp_pressure_s32 = 0;
     s32 v_uncomp_temperature_s32 = 0;
     s32 v_uncomp_humidity_s32 = 0;
 
-    // Inicializa o BME280
-    com_rslt = bme280_init(&bme280);
-
-    if (com_rslt != SUCCESS) {
-        ESP_LOGE(TAG_BME280, "BME280 init/config error. code: %d", com_rslt);
-        snprintf(TEMPDATA, sizeof(TEMPDATA), "N/A");
-        return;
-    }
-
-    // Mantive as mesmas configs usadas no seu publisher_task()
-    com_rslt += bme280_set_oversamp_pressure(BME280_OVERSAMP_16X);
-    com_rslt += bme280_set_oversamp_temperature(BME280_OVERSAMP_2X);
-    com_rslt += bme280_set_oversamp_humidity(BME280_OVERSAMP_1X);
-    com_rslt += bme280_set_standby_durn(BME280_STANDBY_TIME_1_MS);
-    com_rslt += bme280_set_filter(BME280_FILTER_COEFF_16);
-    com_rslt += bme280_set_power_mode(BME280_NORMAL_MODE);
-
-    if (com_rslt != SUCCESS) {
-        ESP_LOGE(TAG_BME280, "BME280 init/config error. code: %d", com_rslt);
-        snprintf(TEMPDATA, sizeof(TEMPDATA), "N/A");
-        return;
-    }
-
-    // Aguardinha curta para conversão
-    vTaskDelay(40 / portTICK_PERIOD_MS);
+    BME280_start();
 
     // Leitura não compensada e compensação
-    com_rslt = bme280_read_uncomp_pressure_temperature_humidity(
-        &v_uncomp_pressure_s32, &v_uncomp_temperature_s32, &v_uncomp_humidity_s32);
-
-    if (com_rslt != SUCCESS) {
-        ESP_LOGE(TAG_BME280, "measure error. code: %d", com_rslt);
-        snprintf(TEMPDATA, sizeof(TEMPDATA), "N/A");
-        return;
-    }
+    ESP_ERROR_CHECK(bme280_read_uncomp_pressure_temperature_humidity(
+        &v_uncomp_pressure_s32, &v_uncomp_temperature_s32, &v_uncomp_humidity_s32));
 
     double temp_c = bme280_compensate_temperature_double(v_uncomp_temperature_s32);
+
     // Grava no buffer TEMPDATA para o log existente na connected_task
     snprintf(TEMPDATA, sizeof(TEMPDATA), "%.2f degC", temp_c);
 }
@@ -385,19 +329,15 @@ static void hibernate() {
  * */
 static void connected_task(void *pvParameters) {
 
-  //read_temperature_sensor(); // Read temperature data
+  read_temperature_sensor(); // Read temperature data
 
   ESP_LOGI("DEBUG", "Current value from tempsensor: %s", TEMPDATA);
 
   publisher_task();
 
-  //hibernate();
+  hibernate();
 
-  while(1) {
-      vTaskDelay(1000 / portTICK_PERIOD_MS);
-  }
-
-  //vTaskDelete(NULL);
+  vTaskDelete(NULL);
 }
 
 /**
@@ -409,6 +349,7 @@ static void _wifi_event_handler(void* arg, esp_event_base_t event_base, int32_t 
     esp_wifi_connect();
   } else if (event_base == WIFI_EVENT && event_id == WIFI_EVENT_STA_DISCONNECTED) {
     ESP_LOGI(TAG, "<<<<< WIFI_EVENT_STA_DISCONNECTED >>>>>");
+    vTaskDelay(200 / portTICK_PERIOD_MS);
     if (s_retry_num < ESP_MAXIMUM_RETRY) {
       esp_wifi_connect();
       xEventGroupClearBits(s_wifi_event_group, WIFI_CONNECTED_BIT);
@@ -416,9 +357,8 @@ static void _wifi_event_handler(void* arg, esp_event_base_t event_base, int32_t 
       ESP_LOGW(TAG, "retry to connect to the AP");
     } else {
       xEventGroupSetBits(s_wifi_event_group, WIFI_FAIL_BIT);
+      ESP_LOGE(TAG,"connect to the AP fail");
     }
-    ESP_LOGE(TAG,"connect to the AP fail");
-
   } else if (event_base == IP_EVENT && event_id == IP_EVENT_STA_GOT_IP) {
     ESP_LOGI(TAG, "got ip");
     s_retry_num = 0;
