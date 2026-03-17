@@ -2,7 +2,6 @@
 #include <stdio.h>
 #include <string.h>
 #include <inttypes.h>
-#include <math.h>
 #include <time.h>
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
@@ -22,23 +21,15 @@
 // ===================== CONFIGURAÇÕES ===========================
 
 // --- Wi-Fi ---
-#define WIFI_SSID           "SUA_REDE_WIFI"
-#define WIFI_PASS           "SUA_SENHA_WIFI"
 #define WIFI_MAX_RETRY      5
 
 // --- MQTT ---
-#define MQTT_BROKER_URI     "mqtt://192.168.0.100:1883"
 #define MQTT_TOPIC_STATS    "coldroom/door/stats"
 #define MQTT_TOPIC_ALARM    "coldroom/door/alarm"
 
-// --- GPIOs (AJUSTAR) ---
-#define GPIO_DOOR           7   // Entrada do fim de curso (NF -> GND)
-#define DOOR_ACTIVE_HIGH    1   // 1: nível alto = ABERTA; 0: invertido
-#define GPIO_BUZZER         8   // Saída para buzzer (LEDC)
-
-// --- Debounce e Alarme ---
-#define DOOR_DEBOUNCE_MS    30
-#define OPEN_ALARM_SEC      60  // <<< defina o limite desejado (em segundos)
+// CONFIG_GPIO_DOOR           Entrada do fim de curso (NF -> GND)
+// CONFIG_DOOR_ACTIVE_HIGH    1: nível alto = ABERTA; 0: invertido
+// CONFIG_GPIO_BUZZER         Saída para buzzer (LEDC)
 
 // --- Buzzer (LEDC) ---
 #define BUZZER_FREQ_HZ      2000
@@ -141,14 +132,14 @@ static void wifi_init_sta(void)
             .threshold.authmode = WIFI_AUTH_WPA2_PSK,
         },
     };
-    strncpy((char*)wifi_config.sta.ssid, WIFI_SSID, sizeof(wifi_config.sta.ssid));
-    strncpy((char*)wifi_config.sta.password, WIFI_PASS, sizeof(wifi_config.sta.password));
+    strncpy((char*)wifi_config.sta.ssid, CONFIG_ESP_WIFI_SSID, sizeof(wifi_config.sta.ssid));
+    strncpy((char*)wifi_config.sta.password, CONFIG_ESP_WIFI_PASS, sizeof(wifi_config.sta.password));
 
     ESP_ERROR_CHECK(esp_wifi_set_mode(WIFI_MODE_STA));
     ESP_ERROR_CHECK(esp_wifi_set_config(WIFI_IF_STA, &wifi_config));
     ESP_ERROR_CHECK(esp_wifi_start());
 
-    ESP_LOGI(TAG, "Conectando ao WiFi SSID:%s", WIFI_SSID);
+    ESP_LOGI(TAG, "Conectando ao WiFi SSID:%s", CONFIG_ESP_WIFI_SSID);
     xEventGroupWaitBits(s_wifi_event_group, WIFI_CONNECTED_BIT, pdFALSE, pdFALSE, portMAX_DELAY);
 }
 
@@ -170,7 +161,9 @@ static void mqtt_event_handler(void *handler_args, esp_event_base_t base, int32_
 static void mqtt_start(void)
 {
     esp_mqtt_client_config_t mqtt_cfg = {
-        .broker.address.uri = MQTT_BROKER_URI,
+        .broker.address.uri = CONFIG_ESP_MQTT_URL,
+        .credentials.username = CONFIG_ESP_MQTT_USER,
+        .credentials.authentication.password = CONFIG_ESP_MQTT_PASS,
         .session.keepalive = 60,
     };
     s_mqtt = esp_mqtt_client_init(&mqtt_cfg);
@@ -260,7 +253,7 @@ static void buzzer_init(void)
     ESP_ERROR_CHECK(ledc_timer_config(&ledc_timer));
 
     ledc_channel_config_t ledc_channel = {
-        .gpio_num = GPIO_BUZZER,
+        .gpio_num = CONFIG_GPIO_BUZZER,
         .speed_mode = LEDC_LOW_SPEED_MODE,
         .channel = LEDC_CHANNEL_0,
         .intr_type = LEDC_INTR_DISABLE,
@@ -282,7 +275,7 @@ static void publish_stats_on_open(void)
 
     // Monta JSON simples (sem lib externa)
     char payload[160] = {0};
-    
+
     snprintf(payload, sizeof(payload),
          "{\"dia\":\"%s\",\"aberturas_dia\":%" PRIu32 ",\"tempo_aberto_ms_dia\":%" PRIu64 ",\"evento\":\"abriu\"}",
          dia, (uint32_t)s_aberturas_dia, (uint64_t)s_tempo_aberto_ms_dia);
@@ -307,20 +300,31 @@ static void door_open_alarm_cb(TimerHandle_t xTimer)
 {
     if (s_door_is_open && !s_alarm_active) {
         s_alarm_active = true;
-        ESP_LOGE(TAG, "ALARME: Porta aberta acima de %d s!", OPEN_ALARM_SEC);
+        ESP_LOGE(TAG, "ALARME: Porta aberta acima de %d s!", CONFIG_OPEN_ALARM_SEC);
+
         // Ativa padrão de beep intermitente
-        xTimerStop(s_buzzer_beep_timer, 0);
-        xTimerChangePeriod(s_buzzer_beep_timer, pdMS_TO_TICKS(1), 0); // dispara já
-        xTimerStart(s_buzzer_beep_timer, 0);
+        if(xTimerIsTimerActive(s_buzzer_beep_timer ) != pdFALSE)
+        {
+            /* xTimer is already active - delete it. */
+            xTimerDelete(s_buzzer_beep_timer, 0);
+        }
+        else
+        {
+            if( xTimerChangePeriod( s_buzzer_beep_timer, 1000 / portTICK_PERIOD_MS, 0 ) != pdPASS )
+            {
+                /* The command was successfully sent. */
+                ESP_LOGE(TAG, "xTimerChangePeriod error");
+            }
+        }
 
         int open_s = (int)((esp_timer_get_time() - s_door_open_start_us) / 1000000);
-        publish_alarm_open_exceeded(OPEN_ALARM_SEC, open_s);
+        publish_alarm_open_exceeded(CONFIG_OPEN_ALARM_SEC, open_s);
     }
 }
 
 static void door_update_state_from_level(int level)
 {
-    bool open = DOOR_ACTIVE_HIGH ? (level != 0) : (level == 0);
+    bool open = CONFIG_DOOR_ACTIVE_HIGH ? (level != 0) : (level == 0);
     if (open == s_door_is_open) {
         return; // sem mudança real
     }
@@ -338,7 +342,7 @@ static void door_update_state_from_level(int level)
         // agenda alarme
         if (s_open_alarm_timer) {
             xTimerStop(s_open_alarm_timer, 0);
-            xTimerChangePeriod(s_open_alarm_timer, pdMS_TO_TICKS(OPEN_ALARM_SEC * 1000), 0);
+            xTimerChangePeriod(s_open_alarm_timer, pdMS_TO_TICKS(CONFIG_OPEN_ALARM_SEC * 1000), 0);
             xTimerStart(s_open_alarm_timer, 0);
         }
 
@@ -381,7 +385,7 @@ static void IRAM_ATTR door_isr_handler(void *arg)
 
 static void debounce_timer_cb(TimerHandle_t xTimer)
 {
-    int level = gpio_get_level(GPIO_DOOR);
+    int level = gpio_get_level(CONFIG_GPIO_DOOR);
     if (level != s_door_level_stable) {
         s_door_level_stable = level;
         door_update_state_from_level(level);
@@ -392,7 +396,7 @@ static void door_gpio_init(void)
 {
     // Entrada com pull-up; interrupção em ambos os flancos
     gpio_config_t io = {
-        .pin_bit_mask = 1ULL << GPIO_DOOR,
+        .pin_bit_mask = 1ULL << CONFIG_GPIO_DOOR,
         .mode = GPIO_MODE_INPUT,
         .pull_up_en = 1,
         .pull_down_en = 0,
@@ -401,17 +405,17 @@ static void door_gpio_init(void)
     ESP_ERROR_CHECK(gpio_config(&io));
 
     // leitura inicial
-    s_door_level_stable = gpio_get_level(GPIO_DOOR);
-    s_door_is_open = DOOR_ACTIVE_HIGH ? (s_door_level_stable != 0) : (s_door_level_stable == 0);
+    s_door_level_stable = gpio_get_level(CONFIG_GPIO_DOOR);
+    s_door_is_open = CONFIG_DOOR_ACTIVE_HIGH ? (s_door_level_stable != 0) : (s_door_level_stable == 0);
     if (s_door_is_open) s_door_open_start_us = esp_timer_get_time();
 
     // timers
-    s_debounce_timer = xTimerCreate("debounce", pdMS_TO_TICKS(DOOR_DEBOUNCE_MS), pdFALSE, NULL, debounce_timer_cb);
-    s_open_alarm_timer = xTimerCreate("open_alarm", pdMS_TO_TICKS(OPEN_ALARM_SEC * 1000), pdFALSE, NULL, door_open_alarm_cb);
+    s_debounce_timer = xTimerCreate("debounce", pdMS_TO_TICKS(CONFIG_DOOR_DEBOUNCE_MS), pdFALSE, NULL, debounce_timer_cb);
+    s_open_alarm_timer = xTimerCreate("open_alarm", pdMS_TO_TICKS(CONFIG_OPEN_ALARM_SEC * 1000), pdFALSE, NULL, door_open_alarm_cb);
 
     // ISR
     gpio_install_isr_service(0);
-    gpio_isr_handler_add(GPIO_DOOR, door_isr_handler, NULL);
+    gpio_isr_handler_add(CONFIG_GPIO_DOOR, door_isr_handler, NULL);
 }
 
 // ======================== APP MAIN =============================
@@ -434,7 +438,7 @@ void app_main(void)
     time_t now = 0; time(&now);
     s_current_ymd = ymd_from_time(now, NULL, 0);
 
-    ESP_LOGI(TAG, "Sistema iniciado. Limite de alarme: %d s", OPEN_ALARM_SEC);
+    ESP_LOGI(TAG, "Sistema iniciado. Limite de alarme: %d s", CONFIG_OPEN_ALARM_SEC);
 
     // Nada no loop — tudo em callbacks/timers
     while (1) {
