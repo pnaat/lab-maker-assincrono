@@ -1,12 +1,10 @@
 // main.c
 #include <stdio.h>
 #include <string.h>
-#include <math.h>
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include "freertos/queue.h"
 #include "freertos/event_groups.h"
-#include "esp_system.h"
 #include "esp_log.h"
 #include "nvs_flash.h"
 #include "esp_netif.h"
@@ -19,22 +17,13 @@
 
 // ===================== CONFIGURAÇÕES =====================
 
-// --- Wi-Fi ---
-#define WIFI_SSID               "SEU_SSID"
-#define WIFI_PASS               "SUA_SENHA"
-
 // --- MQTT ---
-#define MQTT_BROKER_URI         "mqtt://192.168.0.10:1883"
 #define MQTT_TOPIC_EVENTO       "fabrica/linha1/qualidade/enchimento/evento"
 #define MQTT_QOS                1
 
 // --- Pinos (ajuste conforme seu Heltec ESP32-S3 V3) ---
-#define GPIO_TRIG               4   // Saída -> TRIG do HC-SR04
-#define GPIO_ECHO               5   // Entrada <- ECHO (via divisor/level shifter!)
-// LED de alerta e RELÉ do pistão:
-#define GPIO_LED                2
-#define GPIO_RELE               15
-#define RELE_ACTIVE_HIGH        1   // 1: ativo em nível alto; 0: ativo em nível baixo
+// CONFIG_GPIO_TRIG Saída   -> TRIG do HC-SR04
+// CONFIG_GPIO_ECHO Entrada <- ECHO (via divisor/level shifter!)
 
 // --- Ultrassônico & amostragem ---
 #define TEMP_C                  25.0f   // temperatura para compensar velocidade do som
@@ -108,8 +97,8 @@ static void wifi_init_sta(void)
 
     wifi_config_t wifi_config = {
         .sta = {
-            .ssid = WIFI_SSID,
-            .password = WIFI_PASS,
+            .ssid = CONFIG_ESP_WIFI_SSID,
+            .password = CONFIG_ESP_WIFI_PASS,
             .threshold.authmode = WIFI_AUTH_WPA2_PSK,
         },
     };
@@ -122,7 +111,6 @@ static void wifi_init_sta(void)
 
 static void mqtt_event_handler(void *handler_args, esp_event_base_t base, int32_t event_id, void *event_data)
 {
-    esp_mqtt_event_handle_t event = event_data;
     switch ((esp_mqtt_event_id_t)event_id) {
         case MQTT_EVENT_CONNECTED:
             ESP_LOGI(TAG, "MQTT conectado.");
@@ -138,7 +126,9 @@ static void mqtt_event_handler(void *handler_args, esp_event_base_t base, int32_
 static void mqtt_start(void)
 {
     esp_mqtt_client_config_t mqtt_cfg = {
-        .broker.address.uri = MQTT_BROKER_URI,
+        .broker.address.uri = CONFIG_ESP_MQTT_URL,
+        .credentials.username = CONFIG_ESP_MQTT_USER,
+        .credentials.authentication.password = CONFIG_ESP_MQTT_PASS,
         .session.disable_clean_session = false,
         .session.keepalive = 30,
     };
@@ -176,15 +166,15 @@ static esp_err_t hcsr04_measure_once(uint32_t *distance_mm)
     if (!distance_mm) return ESP_ERR_INVALID_ARG;
 
     // Trigger de 10 us
-    gpio_set_level(GPIO_TRIG, 0);
+    gpio_set_level(CONFIG_GPIO_TRIG, 0);
     esp_rom_delay_us(2);
-    gpio_set_level(GPIO_TRIG, 1);
+    gpio_set_level(CONFIG_GPIO_TRIG, 1);
     esp_rom_delay_us(10);
-    gpio_set_level(GPIO_TRIG, 0);
+    gpio_set_level(CONFIG_GPIO_TRIG, 0);
 
     // Espera subida
     int64_t t_wait = esp_timer_get_time();
-    while (gpio_get_level(GPIO_ECHO) == 0) {
+    while (gpio_get_level(CONFIG_GPIO_ECHO) == 0) {
         if ((esp_timer_get_time() - t_wait) > ECHO_TIMEOUT_US) {
             return ESP_ERR_TIMEOUT;
         }
@@ -192,7 +182,7 @@ static esp_err_t hcsr04_measure_once(uint32_t *distance_mm)
 
     // Mede largura do pulso alto
     int64_t t_start = esp_timer_get_time();
-    while (gpio_get_level(GPIO_ECHO) == 1) {
+    while (gpio_get_level(CONFIG_GPIO_ECHO) == 1) {
         if ((esp_timer_get_time() - t_start) > ECHO_TIMEOUT_US) {
             return ESP_ERR_TIMEOUT;
         }
@@ -240,18 +230,18 @@ static void atuador_task(void *arg)
     for (;;) {
         if (xQueueReceive(s_q_atuador, &evt, portMAX_DELAY) == pdTRUE) {
             // LED ON
-            gpio_set_level(GPIO_LED, 1);
+            gpio_set_level(CONFIG_GPIO_LED, 1);
 
             // Pulso no relé
-            gpio_set_level(GPIO_RELE, RELE_ACTIVE_HIGH ? 1 : 0);
+            gpio_set_level(CONFIG_GPIO_RELE, 1);
             vTaskDelay(pdMS_TO_TICKS(RELE_PULSO_MS));
-            gpio_set_level(GPIO_RELE, RELE_ACTIVE_HIGH ? 0 : 1);
+            gpio_set_level(CONFIG_GPIO_RELE, 0);
 
             // Mantém LED aceso pelo restante do tempo
             if (ALERTA_LED_MS > RELE_PULSO_MS) {
                 vTaskDelay(pdMS_TO_TICKS(ALERTA_LED_MS - RELE_PULSO_MS));
             }
-            gpio_set_level(GPIO_LED, 0);
+            gpio_set_level(CONFIG_GPIO_LED, 0);
         }
     }
 }
@@ -330,17 +320,17 @@ static void gpio_init_all(void)
 {
     // TRIG
     gpio_config_t io = {
-        .pin_bit_mask = 1ULL << GPIO_TRIG,
+        .pin_bit_mask = 1ULL << CONFIG_GPIO_TRIG,
         .mode = GPIO_MODE_OUTPUT,
         .pull_up_en = GPIO_PULLUP_DISABLE,
         .pull_down_en = GPIO_PULLDOWN_DISABLE,
         .intr_type = GPIO_INTR_DISABLE
     };
     gpio_config(&io);
-    gpio_set_level(GPIO_TRIG, 0);
+    gpio_set_level(CONFIG_GPIO_TRIG, 0);
 
     // ECHO
-    io.pin_bit_mask = 1ULL << GPIO_ECHO;
+    io.pin_bit_mask = 1ULL << CONFIG_GPIO_ECHO;
     io.mode = GPIO_MODE_INPUT;
     io.pull_up_en = GPIO_PULLUP_DISABLE;  // use divisor/LS externo!
     io.pull_down_en = GPIO_PULLDOWN_DISABLE;
@@ -348,16 +338,16 @@ static void gpio_init_all(void)
     gpio_config(&io);
 
     // LED
-    io.pin_bit_mask = 1ULL << GPIO_LED;
+    io.pin_bit_mask = 1ULL << CONFIG_GPIO_LED;
     io.mode = GPIO_MODE_OUTPUT;
     gpio_config(&io);
-    gpio_set_level(GPIO_LED, 0);
+    gpio_set_level(CONFIG_GPIO_LED, 0);
 
     // RELE
-    io.pin_bit_mask = 1ULL << GPIO_RELE;
+    io.pin_bit_mask = 1ULL << CONFIG_GPIO_RELE;
     io.mode = GPIO_MODE_OUTPUT;
     gpio_config(&io);
-    gpio_set_level(GPIO_RELE, RELE_ACTIVE_HIGH ? 0 : 1);
+    gpio_set_level(CONFIG_GPIO_RELE, 0);
 }
 
 void app_main(void)

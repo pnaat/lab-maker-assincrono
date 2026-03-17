@@ -1,0 +1,50 @@
+menu "Example Configuration"
+    config GPIO_TRIG
+	int "HC-SR04 trigger gpio"
+        default 21
+	help
+	    trigger gpio pin to communicate with HC-SR04 sensor 
+
+    config GPIO_ECHO
+        int "HC-SR04 echo gpio"
+        default 19
+	help
+	    echo gpio pin to communicate with HC-SR04 sensor 
+
+    config GPIO_LED
+        int "LED gpio"
+        default 2
+	help
+	   gpio pin used to drive the LED 
+
+    config GPIO_RELE
+        int "RELAY gpio"
+        default 15
+	help
+	   gpio pin used to drive the Relay 
+
+    config ESP_WIFI_SSID
+	string "Wifi SSID"
+	help
+	    SSID of wifi network to be used
+
+    config ESP_WIFI_PASS
+	string "Wifi Password"
+	help
+	    Password of wifi network to be used
+
+    config ESP_MQTT_URL
+        string "Mqtt url"
+        help
+            Mqtt url using format: mqtt://ip_address:port_number
+
+    config ESP_MQTT_USER
+        string "MQTT user"
+        help
+            User used For MQTT authentication.
+
+    config ESP_MQTT_PASS
+        string "MQTT password"
+        help
+            User password used in authentication.
+endmenu
