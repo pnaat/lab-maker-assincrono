@@ -41,6 +41,15 @@
 #define ALERTA_LED_MS           400     // tempo com LED aceso na rejeição
 #define RELE_PULSO_MS           150     // pulso do pistão (rele)
 
+// --- MQTT
+#if CONFIG_BROKER_CERTIFICATE_OVERRIDDEN == 1
+static const uint8_t mqtt_eclipseprojects_io_pem_start[]  = "-----BEGIN CERTIFICATE-----\n" CONFIG_BROKER_CERTIFICATE_OVERRIDE "\n-----END CERTIFICATE-----";
+#else
+extern const uint8_t mqtt_eclipseprojects_io_pem_start[]   asm("_binary_mqtt_eclipseprojects_io_pem_start");
+#endif
+extern const uint8_t mqtt_eclipseprojects_io_pem_end[]   asm("_binary_mqtt_eclipseprojects_io_pem_end");
+
+
 // ===================== GLOBAIS =====================
 static const char *TAG = "QC_ENCH";
 
@@ -127,6 +136,7 @@ static void mqtt_start(void)
 {
     esp_mqtt_client_config_t mqtt_cfg = {
         .broker.address.uri = CONFIG_ESP_MQTT_URL,
+        .broker.verification.certificate = (const char *)mqtt_eclipseprojects_io_pem_start,
         .credentials.username = CONFIG_ESP_MQTT_USER,
         .credentials.authentication.password = CONFIG_ESP_MQTT_PASS,
         .session.disable_clean_session = false,
@@ -259,7 +269,9 @@ static void medicao_task(void *arg)
     for (;;) {
         uint32_t dmm = 0;
         esp_err_t r = hcsr04_measure_once(&dmm);
+        
         if (r == ESP_OK) {
+            
             int64_t now_ms = esp_timer_get_time() / 1000;
             bool pr = (dmm < PRESENCE_THRESHOLD_MM);
 
@@ -364,7 +376,7 @@ void app_main(void)
     // Espera Wi-Fi para iniciar MQTT
     xEventGroupWaitBits(s_wifi_event_group, WIFI_CONNECTED_BIT, pdFALSE, pdFALSE, portMAX_DELAY);
     mqtt_start();
-
+    
     // Tarefa de medição
     xTaskCreate(medicao_task, "medicao_task", 4096, NULL, 12, NULL);
 }

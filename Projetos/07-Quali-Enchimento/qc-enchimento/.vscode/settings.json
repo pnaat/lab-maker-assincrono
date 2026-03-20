@@ -14,5 +14,8 @@
     "--background-index",
     "--query-driver=**",
     "--compile-commands-dir=c:\\Users\\saojosan\\Documents\\Lab Maker\\lab-maker-assincrono\\Projetos\\08-Quali-Enchimento\\qc-enchimento\\build"
-  ]
+  ],
+  "idf.currentSetup": "C:\\Users\\saojosan\\esp\\v5.5.2\\esp-idf",
+  "idf.portWin": "COM7",
+  "idf.flashType": "UART"
 }
