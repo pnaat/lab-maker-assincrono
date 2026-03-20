@@ -53,7 +53,7 @@ static int s_retry_num = 0;
     #define SDA_PIN     CONFIG_BME280_SDA_GPIO
 #endif
 #ifndef CONFIG_BME280_SCL_GPIO
-    #define SCL_PIN     19
+    #define SCL_PIN    19
 #else
     #define SCL_PIN     CONFIG_BME280_SCL_GPIO
 #endif
@@ -76,6 +76,15 @@ static char TEMPDATA[32] = {0};
 #define I2C_MASTER_FREQ_HZ  100000
 #define BME280_SENSOR_ADDR  BME280_I2C_ADDRESS2
 
+
+#if CONFIG_BROKER_CERTIFICATE_OVERRIDDEN == 1
+static const uint8_t mqtt_eclipseprojects_io_pem_start[]  = "-----BEGIN CERTIFICATE-----\n" CONFIG_BROKER_CERTIFICATE_OVERRIDE "\n-----END CERTIFICATE-----";
+#else
+extern const uint8_t mqtt_eclipseprojects_io_pem_start[]   asm("_binary_mqtt_eclipseprojects_io_pem_start");
+#endif
+extern const uint8_t mqtt_eclipseprojects_io_pem_end[]   asm("_binary_mqtt_eclipseprojects_io_pem_end");
+
+
 static s8 BME280_I2C_bus_write(u8 dev_addr, u8 reg_addr, u8 *reg_data, u8 cnt);
 static s8 BME280_I2C_bus_read(u8 dev_addr, u8 reg_addr, u8 *reg_data, u8 cnt);
 static void BME280_delay_msek(u32 msek);
@@ -83,7 +92,7 @@ static void BME280_delay_msek(u32 msek);
 struct bme280_t bme280 = {
     .bus_write  = BME280_I2C_bus_write,
     .bus_read   = BME280_I2C_bus_read,
-    .dev_addr   = BME280_SENSOR_ADDR,
+    .dev_addr   = 0x76,
     .delay_msec = BME280_delay_msek
 };
 
@@ -146,13 +155,14 @@ static void mqtt_event_handler(void *handler_args, esp_event_base_t base, int32_
 esp_mqtt_client_handle_t client = NULL;
 static void mqtt_app_start(void)
 {
-    ESP_LOGI(TAG, "STARTING MQTT: %s", CONFIG_ESP_MQTT_URL);
+    ESP_LOGI(TAG, "STARTING MQTT");
     xEventGroupClearBits(s_wifi_event_group, MQTT_CONNECTED_BIT);
 
     esp_mqtt_client_config_t mqttConfig = {0};
     mqttConfig.broker.address.uri = CONFIG_ESP_MQTT_URL;
     mqttConfig.credentials.username = CONFIG_ESP_MQTT_USER;
     mqttConfig.credentials.authentication.password = CONFIG_ESP_MQTT_PASS;
+    mqttConfig.broker.verification.certificate = (const char *)mqtt_eclipseprojects_io_pem_start;
 
     client = esp_mqtt_client_init(&mqttConfig);
     esp_mqtt_client_register_event(client, ESP_EVENT_ANY_ID, mqtt_event_handler, client);
@@ -196,7 +206,7 @@ s8 BME280_I2C_bus_write(u8 dev_addr, u8 reg_addr, u8 *reg_data, u8 cnt)
 s8 BME280_I2C_bus_read(u8 dev_addr, u8 reg_addr, u8 *reg_data, u8 cnt)
 {
     s32 iError = BME280_INIT_VALUE;
-
+    
     i2c_cmd_handle_t cmd = i2c_cmd_link_create();
 
     i2c_master_start(cmd);
