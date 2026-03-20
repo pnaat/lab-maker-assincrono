@@ -37,6 +37,15 @@
 #define BUZZER_BEEP_MS_ON   400
 #define BUZZER_BEEP_MS_OFF  400
 
+
+#if CONFIG_BROKER_CERTIFICATE_OVERRIDDEN == 1
+static const uint8_t mqtt_eclipseprojects_io_pem_start[]  = "-----BEGIN CERTIFICATE-----\n" CONFIG_BROKER_CERTIFICATE_OVERRIDE "\n-----END CERTIFICATE-----";
+#else
+extern const uint8_t mqtt_eclipseprojects_io_pem_start[]   asm("_binary_mqtt_eclipseprojects_io_pem_start");
+#endif
+extern const uint8_t mqtt_eclipseprojects_io_pem_end[]   asm("_binary_mqtt_eclipseprojects_io_pem_end");
+
+
 // ===================== VARIÁVEIS GLOBAIS =======================
 static const char *TAG = "COLDROOM";
 
@@ -162,14 +171,17 @@ static void mqtt_start(void)
 {
     esp_mqtt_client_config_t mqtt_cfg = {
         .broker.address.uri = CONFIG_ESP_MQTT_URL,
+        .broker.verification.certificate = (const char *)mqtt_eclipseprojects_io_pem_start,
         .credentials.username = CONFIG_ESP_MQTT_USER,
         .credentials.authentication.password = CONFIG_ESP_MQTT_PASS,
-        .session.keepalive = 60,
+        .session.disable_clean_session = false,
+        .session.keepalive = 30,
     };
     s_mqtt = esp_mqtt_client_init(&mqtt_cfg);
     esp_mqtt_client_register_event(s_mqtt, ESP_EVENT_ANY_ID, mqtt_event_handler, NULL);
     esp_mqtt_client_start(s_mqtt);
 }
+
 
 static void mqtt_publish(const char *topic, const char *payload)
 {

@@ -1,13 +1,13 @@
 menu "Example Configuration"
     config GPIO_DOOR
 	int "door sensor gpio"
-        default 19
+        default 21
 	help
 	    door sensor gpio used to monitor the door
 
     config GPIO_BUZZER
         int "buzzer gpio"
-        default 20
+        default 19
 	help
 	    buzzer gpio to excite the alarm buzzer
 
