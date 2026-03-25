@@ -19,27 +19,26 @@
 static const char *TAG = "SISTEMA_MANUTENCAO";
 
 // --- CONFIGURAÇÕES ---
-#define WIFI_SSID       "NOME_DA_REDE"
-#define WIFI_PASS       "SENHA_DA_REDE"
-#define WEB_DEPLOY_URL  "https://script.google.com/macros/s/SEU_ID/exec"
+#define WIFI_SSID       "XXXXXXX"
+#define WIFI_PASS       "XXXXXXX"
+#define WEB_DEPLOY_URL  "https://script.google.com/macros/s/XXXXXXXXXXX/exec"
 #define WIFI_MAX_RETRY   5
 
 // Pinagem Heltec V3
+#define I2C_MASTER_NUM    0
+#define OLED_SDA          17
+#define OLED_SCL          18
 #define OLED_RST          21
-#define VEXT_CTRL         18 
+#define VEXT_CTRL         36 
 
-#define I2C_MASTER_NUM      I2C_NUM_0
-#define I2C_SDA_IO          4     
-#define I2C_SCL_IO          15    
-#define I2C_MASTER_FREQ_HZ  40000
-
-#define RFID_MISO         11
-#define RFID_MOSI         10
-#define RFID_SCK          9
-#define RFID_SDA          8
+#define RFID_MISO         7
+#define RFID_MOSI         6
+#define RFID_SCK          5
+#define RFID_SDA          4
 
 // Nome da máquina
 #define MAQUINA_NOME   "PRENSA_01"   
+
 
 // ===================== VARIÁVEIS GLOBAIS =======================
 ssd1306_handle_t oled = NULL;
@@ -51,91 +50,33 @@ static const int WIFI_CONNECTED_BIT = BIT0;
 
 // ===================== OLED =====================
 
-// Liga a alimentação do OLED na Heltec (VEXT = 3V3 periféricos)
-static void heltec_vext_enable(void) {
-    gpio_config_t io = {
-        .pin_bit_mask = 1ULL << VEXT_CTRL,
-        .mode = GPIO_MODE_OUTPUT,
-        .pull_up_en = GPIO_PULLUP_DISABLE,
-        .pull_down_en = GPIO_PULLDOWN_DISABLE,
-        .intr_type = GPIO_INTR_DISABLE
-    };
-    gpio_config(&io);
-    gpio_set_level(VEXT_CTRL, 1); // energiza OLED
-    vTaskDelay(pdMS_TO_TICKS(10)); // estabilização
-}
-
-// Inicializa I2C e cria o handle do SSD1306 (lib espressif/ssd1306)
 static void oled_init_heltec(void) {
-    heltec_vext_enable();
+
+    gpio_set_direction(VEXT_CTRL, GPIO_MODE_OUTPUT);
+    gpio_set_level(VEXT_CTRL, 0); 
+    gpio_set_direction(OLED_RST, GPIO_MODE_OUTPUT);
+    gpio_set_level(OLED_RST, 0);
+    vTaskDelay(pdMS_TO_TICKS(50));
+    gpio_set_level(OLED_RST, 1);
 
     i2c_config_t conf = {
         .mode = I2C_MODE_MASTER,
-        .sda_io_num = (gpio_num_t)I2C_SDA_IO,
+        .sda_io_num = OLED_SDA,
         .sda_pullup_en = GPIO_PULLUP_ENABLE,
-        .scl_io_num = (gpio_num_t)I2C_SCL_IO,
+        .scl_io_num = OLED_SCL,
         .scl_pullup_en = GPIO_PULLUP_ENABLE,
-#if ESP_IDF_VERSION >= ESP_IDF_VERSION_VAL(5, 0, 0)
-        .clk_flags = I2C_SCLK_SRC_FLAG_FOR_NOMAL,
-#endif
+        .master.clk_speed = 400000,
     };
-    conf.master.clk_speed = I2C_MASTER_FREQ_HZ;
+    i2c_param_config(I2C_MASTER_NUM, &conf);
+    i2c_driver_install(I2C_MASTER_NUM, conf.mode, 0, 0, 0);
 
-    ESP_ERROR_CHECK(i2c_param_config(I2C_MASTER_NUM, &conf));
-    ESP_ERROR_CHECK(i2c_driver_install(I2C_MASTER_NUM, conf.mode, 0, 0, 0));
-
-    // A lib cria o display pelo número da porta I2C + endereço padrão (0x3C)
-    oled = ssd1306_create(I2C_MASTER_NUM, SSD1306_I2C_ADDRESS); // conforme README da lib
-    if (oled == NULL) {
-        ESP_LOGE(TAG, "Falha ao criar handle do SSD1306");
-    }
-
-    // Tela inicial
+    oled = ssd1306_create(I2C_MASTER_NUM, 0x3C);
     ssd1306_clear_screen(oled, 0x00);
-    ssd1306_draw_string(oled, 0, 0,  (const uint8_t*)"Iniciando...", 12, 1);
-    ssd1306_draw_string(oled, 0, 20, (const uint8_t*)"Wi-Fi...",      12, 1);
+    ssd1306_draw_string(oled, 0, 0, (const uint8_t*)"Iniciando...", 12, 1);
     ssd1306_refresh_gram(oled);
 
 }
 
-// ===================== Tempo (SNTP/NTP) =====================
-static void time_init_sntp(void) {
-    // Timezone Brasil: São Paulo (considera DST histórico automaticamente)
-    setenv("TZ", "America/Sao_Paulo", 1);
-    tzset();
-
-    esp_sntp_setoperatingmode(SNTP_OPMODE_POLL);
-    // Servidores NTP comuns (pode customizar)
-    esp_sntp_setservername(0, "pool.ntp.org");
-    esp_sntp_setservername(1, "time.google.com");
-    esp_sntp_init();
-    // Espera até obter hora válida (epoch > 2019 por ex.)
-    for (int i = 0; i < 15; i++) {
-        time_t now = 0; struct tm timeinfo = {0};
-        time(&now);
-        localtime_r(&now, &timeinfo);
-        if (timeinfo.tm_year >= (2019 - 1900)) {
-            break;
-        }
-        vTaskDelay(pdMS_TO_TICKS(1000));
-    }
-
-}
-
-static void get_timestamp_str(char *out, size_t out_len) {
-    time_t now = 0; struct tm timeinfo = {0};
-    time(&now);
-    localtime_r(&now, &timeinfo);
-
-    if (timeinfo.tm_year < (2019 - 1900)) {
-        // Se NTP ainda não sincronizou, envia "NAO_SINCR" + epoch bruto (debug)
-        snprintf(out, out_len, "NAO_SINCR_%ld", (long)now);
-        return;
-    }
-
-    // Formato: 2026-01-28 16:45:02 (local)
-    strftime(out, out_len, "%Y-%m-%d %H:%M:%S", &timeinfo);
-}
 
 // ===================== ENVIO HTTP =====================
 
@@ -167,19 +108,17 @@ static void url_encode(const char *in, char *out, size_t out_len) {
 void enviar_dados_planilha(const char* uid) {
     // 1) Montar timestamp local (sincronizado via SNTP)
     char ts[32];
-    get_timestamp_str(ts, sizeof(ts));
 
     // 2) Encodar parâmetros
-    char uid_enc[64], maq_enc[64], ts_enc[96];
+    char uid_enc[64], maq_enc[64];
     url_encode(uid, uid_enc, sizeof(uid_enc));
     url_encode(MAQUINA_NOME, maq_enc, sizeof(maq_enc));
-    url_encode(ts, ts_enc, sizeof(ts_enc));
 
     // 3) Montar URL final
     char url_final[512];
     // Exemplo de query: ?ID=<uid>&MAQUINA=<nome>&DATAHORA=<yyyy-mm-dd HH:MM:SS>
-    snprintf(url_final, sizeof(url_final), "%s?ID=%s&MAQUINA=%s&DATAHORA=%s",
-             WEB_DEPLOY_URL, uid_enc, maq_enc, ts_enc);
+    snprintf(url_final, sizeof(url_final), "%s?ID=%s&MAQUINA=%s",
+         WEB_DEPLOY_URL, uid_enc, maq_enc);
 
     // 4) HTTP GET
     esp_http_client_config_t config = {
@@ -188,18 +127,19 @@ void enviar_dados_planilha(const char* uid) {
         .disable_auto_redirect = false,
         .is_async = false,
         // Opcional: timeouts para melhorar robustez
-        .timeout_ms = 8000,
+        //.timeout_ms = 8000,
     };
 
     esp_http_client_handle_t client = esp_http_client_init(&config);
-    esp_err_t err = esp_http_client_perform(client);
+    esp_http_client_perform(client);
+    int status = esp_http_client_get_status_code(client);
 
-    if (err == ESP_OK) {
+    if (status == 200 || status == 302 ) {
         int status = esp_http_client_get_status_code(client);
         ESP_LOGI(TAG, "Dados enviados! Status: %d", status);
         ssd1306_draw_string(oled, 0, 45, (const uint8_t*)"ENVIADO OK", 12, 1);
     } else {
-        ESP_LOGE(TAG, "Erro no envio: %s", esp_err_to_name(err));
+        ESP_LOGE(TAG, "Erro no envio: %d", status);
         ssd1306_draw_string(oled, 0, 45, (const uint8_t*)"ERRO ENVIO", 12, 1);
     }
     ssd1306_refresh_gram(oled);
@@ -321,7 +261,8 @@ void app_main(void) {
         nvs_flash_erase();
         nvs_flash_init();
     }
-    esp_event_loop_create_default();
+
+    esp_log_level_set("HTTP_CLIENT", ESP_LOG_NONE);
 
     // 2. Inicializar OLED
     oled_init_heltec();
@@ -329,10 +270,7 @@ void app_main(void) {
     // 3. Wi-Fi 
     wifi_init_sta();
 
-    // 4. Iniciar SNTP para timestamp
-    time_init_sntp();
-
-    // 5. Inicializar Driver RC522 
+    // 4. Inicializar Driver RC522 
     rc522_spi_config_t spi_config = {
         .host_id = SPI2_HOST,
         .bus_config = &(spi_bus_config_t){
@@ -349,7 +287,7 @@ void app_main(void) {
     rc522_spi_create(&spi_config, &rfid_driver);
     rc522_driver_install(rfid_driver);
 
-    // 6. Inicializar Scanner
+    // 5. Inicializar Scanner
     rc522_config_t scanner_config = {
         .driver = rfid_driver,
     };
@@ -359,4 +297,9 @@ void app_main(void) {
     rc522_start(rfid_scanner);
 
     ESP_LOGI(TAG, "Sistema de Manutencao Iniciado");
+
+    oled = ssd1306_create(I2C_MASTER_NUM, 0x3C);
+    ssd1306_clear_screen(oled, 0x00);
+    ssd1306_draw_string(oled, 0, 0, (const uint8_t*)"Sistema Iniciado", 12, 1);
+    ssd1306_refresh_gram(oled);
 }

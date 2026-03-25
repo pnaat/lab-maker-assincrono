@@ -17,12 +17,12 @@ static const char *TAG = "CADASTRO_RFID";
 #define OLED_SDA          17
 #define OLED_SCL          18
 #define OLED_RST          21
-#define VEXT_CTRL         18 
+#define VEXT_CTRL         36 
 
-#define RFID_MISO         11
-#define RFID_MOSI         10
-#define RFID_SCK          9
-#define RFID_SDA          8
+#define RFID_MISO         7
+#define RFID_MOSI         6
+#define RFID_SCK          5
+#define RFID_SDA          4
 
 ssd1306_handle_t oled = NULL;
 static rc522_driver_handle_t driver;
