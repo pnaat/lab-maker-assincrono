@@ -26,6 +26,17 @@
 #define ADC_CHANNEL ADC1_CHANNEL_6 // ADC1 channel connected to GPIO34
 #define ADC_UNIT ADC_UNIT_1        //ADC Unit
 
+#define WIFI_MAX_RETRY      5
+
+
+#if CONFIG_BROKER_CERTIFICATE_OVERRIDDEN == 1
+static const uint8_t mqtt_eclipseprojects_io_pem_start[]  = "-----BEGIN CERTIFICATE-----\n" CONFIG_BROKER_CERTIFICATE_OVERRIDE "\n-----END CERTIFICATE-----";
+#else
+extern const uint8_t mqtt_eclipseprojects_io_pem_start[]   asm("_binary_mqtt_eclipseprojects_io_pem_start");
+#endif
+extern const uint8_t mqtt_eclipseprojects_io_pem_end[]   asm("_binary_mqtt_eclipseprojects_io_pem_end");
+
+
 //--------------------------------------------------------------------------------------
 // Declarações de Variaveis
 //--------------------------------------------------------------------------------------
@@ -77,10 +88,6 @@ static const char *TAG2 = "sensor";
 //--------------------------------------------------------------------------------------
 // MQTT
 //--------------------------------------------------------------------------------------
-#define MQTT_BROKER_URI     "mqtt://192.168.1.101:1883" //IP do MQTT broker
-const char* mqtt_username = "rdalla"; // MQTT username
-const char* mqtt_password = "vao1ca"; // MQTT password
-const char *topic_mqtt_cmd = "/home/command";///currentmonitor";
 const char* irms_topic = "home/sensor/irms";
 const char* kwh_topic = "home/sensor/kwh";
 const char* cost_topic = "home/sensor/cost";
@@ -101,14 +108,14 @@ struct sensor
 //Referencia para saber status de conexao
 //--------------------------------------------------------------------------------------
 
-static EventGroupHandle_t wifi_event_group;
-const static int CONNECTION_STATUS = BIT0;
+static EventGroupHandle_t s_wifi_event_group;
+static const int WIFI_CONNECTED_BIT = BIT0;
 
 //--------------------------------------------------------------------------------------
 //Cliente MQTT
 //--------------------------------------------------------------------------------------
 
-esp_mqtt_client_handle_t mqtt_client;
+static esp_mqtt_client_handle_t s_mqtt = NULL;
 
 //--------------------------------------------------------------------------------------
 // Funcao Calibracao do Sensor de Corrente
@@ -116,6 +123,7 @@ esp_mqtt_client_handle_t mqtt_client;
 
 void currentCalibration(double _ICAL)
 {
+
   ICAL = _ICAL;
   offsetI = ADC_COUNTS >> 1;
   int adjust = 0;
@@ -135,6 +143,7 @@ void currentCalibration(double _ICAL)
 
 double getIrms(int NUMBER_OF_SAMPLES)
 {
+
   samples = NUMBER_OF_SAMPLES;
   int SupplyVoltage = 3300; //3V3 power supply ESP32
 
@@ -188,17 +197,17 @@ void vPublishTask(void *pvParameter)
     ESP_LOGI(TAG, "Enviando dados para o topico %s...", irms_topic);
     //Sanity check do mqtt_client antes de publicar
     snprintf(mqtt_buffer, 128, "%lf", sensorReceived.irms);
-    esp_mqtt_client_publish(mqtt_client, irms_topic, mqtt_buffer, 0, 0, 0);
+    esp_mqtt_client_publish(s_mqtt, irms_topic, mqtt_buffer, 0, 0, 0);
 
     ESP_LOGI(TAG, "Enviando dados para o topico %s...", kwh_topic);
     //Sanity check do mqtt_client antes de publicar
     snprintf(mqtt_buffer, 128, "%f", sensorReceived.kwh);
-    esp_mqtt_client_publish(mqtt_client, kwh_topic, mqtt_buffer, 0, 0, 0);
+    esp_mqtt_client_publish(s_mqtt, kwh_topic, mqtt_buffer, 0, 0, 0);
 
     ESP_LOGI(TAG, "Enviando dados para o topico %s...", cost_topic);
     //Sanity check do mqtt_client antes de publicar
     snprintf(mqtt_buffer, 128, "%f", sensorReceived.cost);
-    esp_mqtt_client_publish(mqtt_client, cost_topic, mqtt_buffer, 0, 0, 0);
+    esp_mqtt_client_publish(s_mqtt, cost_topic, mqtt_buffer, 0, 0, 0);
 
     vTaskDelay(5000 / portTICK_PERIOD_MS);
   }
@@ -209,12 +218,12 @@ void vPublishTask(void *pvParameter)
 //--------------------------------------------------------------------------------------
 void vSensorTask(void *pvParameter)
 {
-
   
+  ESP_LOGI(TAG, "Iniciando task leitura sensor");
+
   currentCalibration(23);
-
-  ESP_LOGI(TAG, "Iniciando task leitura sensor SCT013 50A/1V...");
   
+  ESP_LOGI(TAG, "Iniciando task leitura sensor SCT013 50A/1V...");
 
   while (1)
   {
@@ -242,7 +251,7 @@ void vSensorTask(void *pvParameter)
     kwhValue = (float)((sensorCurrent.irms * 127.0 * 5) / (1000.0 * 3600.0));
 
     ESP_LOGI(TAG, "Calculando Custo por KWh Consumido...\n");
-    costKwh = kwhValue * 0.85; // CPFL Tarif 2020 R$ 0.85
+    costKwh = kwhValue * 0.34; // Tarif 2026 R$  0,34
 
     sumKwh += kwhValue;
     sumCost += costKwh;
@@ -261,102 +270,106 @@ void vSensorTask(void *pvParameter)
   }
 }
 
-//--------------------------------------------------------------------------------------
-//Callback para tratar eventos MQTT
-//--------------------------------------------------------------------------------------
+
+// ===================== WIFI ======================
+
+static void wifi_event_handler(void* arg, esp_event_base_t event_base,
+                               int32_t event_id, void* event_data)
+{
+    static int s_retry_num = 0;
+
+    if (event_base == WIFI_EVENT && event_id == WIFI_EVENT_STA_START) {
+        esp_wifi_connect();
+
+    } else if (event_base == WIFI_EVENT && event_id == WIFI_EVENT_STA_DISCONNECTED) {
+        if (s_retry_num < WIFI_MAX_RETRY) {
+            esp_wifi_connect();
+            s_retry_num++;
+            ESP_LOGW(TAG, "WiFi desconectado, tentando reconectar... (%d)", s_retry_num);
+        } else {
+            ESP_LOGE(TAG, "Falha ao conectar no WiFi");
+        }
+        xEventGroupClearBits(s_wifi_event_group, WIFI_CONNECTED_BIT);
+
+    } else if (event_base == IP_EVENT && event_id == IP_EVENT_STA_GOT_IP) {
+        ip_event_got_ip_t* event = (ip_event_got_ip_t*) event_data;
+        ESP_LOGI(TAG, "Got IP: " IPSTR, IP2STR(&event->ip_info.ip));
+        s_retry_num = 0;
+        xEventGroupSetBits(s_wifi_event_group, WIFI_CONNECTED_BIT);
+    }
+}
+
+static void wifi_init_sta(void)
+{
+    s_wifi_event_group = xEventGroupCreate();
+
+    ESP_ERROR_CHECK(esp_netif_init());
+    ESP_ERROR_CHECK(esp_event_loop_create_default());
+    esp_netif_create_default_wifi_sta();
+
+    wifi_init_config_t cfg = WIFI_INIT_CONFIG_DEFAULT();
+    ESP_ERROR_CHECK(esp_wifi_init(&cfg));
+
+    esp_event_handler_instance_t instance_any_id;
+    esp_event_handler_instance_t instance_got_ip;
+    ESP_ERROR_CHECK(esp_event_handler_instance_register(WIFI_EVENT,
+                                                        ESP_EVENT_ANY_ID,
+                                                        &wifi_event_handler,
+                                                        NULL,
+                                                        &instance_any_id));
+    ESP_ERROR_CHECK(esp_event_handler_instance_register(IP_EVENT,
+                                                        IP_EVENT_STA_GOT_IP,
+                                                        &wifi_event_handler,
+                                                        NULL,
+                                                        &instance_got_ip));
+
+    wifi_config_t wifi_config = {
+        .sta = {
+            .threshold.authmode = WIFI_AUTH_WPA2_PSK,
+        },
+    };
+    strncpy((char*)wifi_config.sta.ssid, CONFIG_ESP_WIFI_SSID, sizeof(wifi_config.sta.ssid));
+    strncpy((char*)wifi_config.sta.password, CONFIG_ESP_WIFI_PASS, sizeof(wifi_config.sta.password));
+
+    ESP_ERROR_CHECK(esp_wifi_set_mode(WIFI_MODE_STA));
+    ESP_ERROR_CHECK(esp_wifi_set_config(WIFI_IF_STA, &wifi_config));
+    ESP_ERROR_CHECK(esp_wifi_start());
+
+    ESP_LOGI(TAG, "Conectando ao WiFi SSID:%s", CONFIG_ESP_WIFI_SSID);
+    xEventGroupWaitBits(s_wifi_event_group, WIFI_CONNECTED_BIT, pdFALSE, pdFALSE, portMAX_DELAY);
+}
+
+// ===================== MQTT ======================
+
 static void mqtt_event_handler(void *handler_args, esp_event_base_t base, int32_t event_id, void *event_data)
 {
-  // Connect to MQTT Broker
-  switch ((esp_mqtt_event_id_t)event_id)
-  {
-  case MQTT_EVENT_CONNECTED:
-    ESP_LOGI(TAG, "Conexao Realizada com Broker MQTT");
-    esp_mqtt_client_subscribe(mqtt_client, topic_mqtt_cmd, 0);
-
-    break;
-
-  case MQTT_EVENT_DISCONNECTED:
-    ESP_LOGI(TAG, "Desconexao Realizada com Broker MQTT");
-    break;
-
-  case MQTT_EVENT_SUBSCRIBED:
-    ESP_LOGI(TAG, "Subscribe Realizado com Broker MQTT");
-    break;
-
-  case MQTT_EVENT_PUBLISHED:
-    ESP_LOGI(TAG, "Publish Realizado com Broker MQTT");
-    break;
-
-  case MQTT_EVENT_ERROR:
-    ESP_LOGI(TAG, "MQTT_EVENT_ERROR");
-    break;
-
-  default:
-    break;
-  }
+    esp_mqtt_event_handle_t event = event_data;
+    switch (event->event_id) {
+        case MQTT_EVENT_CONNECTED:
+            ESP_LOGI(TAG, "MQTT conectado");
+            break;
+        case MQTT_EVENT_DISCONNECTED:
+            ESP_LOGW(TAG, "MQTT desconectado");
+            break;
+        default:
+            break;
+    }
 }
 
-//--------------------------------------------------------------------------------------
-//Callback para tratar eventos WiFi
-//--------------------------------------------------------------------------------------
-static esp_err_t wifi_event_handler(void *ctx, esp_event_base_t event, int32_t event_id)
+
+static void mqtt_start(void)
 {
-
-  if (event == WIFI_EVENT && event_id == WIFI_EVENT_STA_START) {
-    esp_wifi_connect(); //inicia conexao Wi-Fi
-  }  else if (event == IP_EVENT && event_id == IP_EVENT_STA_GOT_IP) {
-    xEventGroupSetBits(wifi_event_group, CONNECTION_STATUS); // "seta" status de conexao
-  }  else if (event == WIFI_EVENT && event_id == WIFI_EVENT_STA_DISCONNECTED) {
-    esp_wifi_connect();                                        //tenta conectar de novo
-    xEventGroupClearBits(wifi_event_group, CONNECTION_STATUS); //limpa status de conexao
-  }
-
-  return ESP_OK;
-}
-
-//--------------------------------------------------------------------------------------
-//Inicializacao WiFi
-//--------------------------------------------------------------------------------------
-static void wifi_init(void)
-{
-
-  wifi_event_group = xEventGroupCreate();
-  ESP_ERROR_CHECK(esp_event_loop_create_default());
-  wifi_init_config_t cfg = WIFI_INIT_CONFIG_DEFAULT();
-
-  ESP_ERROR_CHECK(esp_wifi_init(&cfg));
-  ESP_ERROR_CHECK(esp_wifi_set_storage(WIFI_STORAGE_RAM));
-  wifi_config_t wifi_config = {
-      .sta = {
-          .ssid = "Moura Valle",   //a ssid da sua rede wifi
-          .password = "00519335damore!", //o password da sua rede wifi
-      }};
-
-  ESP_ERROR_CHECK(esp_wifi_set_mode(WIFI_MODE_STA)); //ESP32 em modo station
-  ESP_ERROR_CHECK(esp_wifi_set_config(ESP_IF_WIFI_STA, &wifi_config));
-  ESP_LOGI(TAG, "Iniciando Conexao com Rede WiFi...");
-  ESP_ERROR_CHECK(esp_wifi_start());
-  ESP_LOGI(TAG, "Conectando...");
-  xEventGroupWaitBits(wifi_event_group, CONNECTION_STATUS, false, true, portMAX_DELAY);
-}
-
-//--------------------------------------------------------------------------------------
-//Inicializacao MQTT Service
-//--------------------------------------------------------------------------------------
-static void mqtt_init(void)
-{
-  esp_mqtt_client_config_t mqtt_cfg = {
-      .broker.address.uri = MQTT_BROKER_URI,
-      .credentials.username = mqtt_username,
-      .credentials.authentication.password = mqtt_password,
-
-  };
-
-  //Inicializa cliente mqtt
-  mqtt_client = esp_mqtt_client_init(&mqtt_cfg);
-  esp_mqtt_client_register_event(mqtt_client, ESP_EVENT_ANY_ID, mqtt_event_handler, NULL);
-  esp_mqtt_client_start(mqtt_client);
-
+    esp_mqtt_client_config_t mqtt_cfg = {
+        .broker.address.uri = CONFIG_ESP_MQTT_URL,
+        .broker.verification.certificate = (const char *)mqtt_eclipseprojects_io_pem_start,
+        .credentials.username = CONFIG_ESP_MQTT_USER,
+        .credentials.authentication.password = CONFIG_ESP_MQTT_PASS,
+        .session.disable_clean_session = false,
+        .session.keepalive = 30,
+    };
+    s_mqtt = esp_mqtt_client_init(&mqtt_cfg);
+    esp_mqtt_client_register_event(s_mqtt, ESP_EVENT_ANY_ID, mqtt_event_handler, NULL);
+    esp_mqtt_client_start(s_mqtt);
 }
 
 //--------------------------------------------------------------------------------------
@@ -385,8 +398,8 @@ void app_main()
   }
   ESP_ERROR_CHECK(ret);
 
-  wifi_init();
-  mqtt_init();
+  wifi_init_sta();
+  mqtt_start();
 
   //criação de fila do xSensor_Control (vSensorTask <--> vPublishTask)
   xSensor_Control = xQueueCreate(10, sizeof(struct sensor));
@@ -402,7 +415,7 @@ void app_main()
     while (1);
   }
 
-  if (xTaskCreate(&vSensorTask, "vSensorTask", configMINIMAL_STACK_SIZE + 4096, NULL, 5, NULL) != pdTRUE)
+  if (xTaskCreate(vSensorTask, "vSensorTask", configMINIMAL_STACK_SIZE + 4096, NULL, 5, NULL) != pdTRUE)
   {
     ESP_LOGE("Erro", "error - nao foi possivel alocar vSensorTask.\n");
     while (1);
