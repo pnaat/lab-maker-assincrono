@@ -10,5 +10,6 @@
     "--background-index",
     "--query-driver=**",
     "--compile-commands-dir=c:\\Users\\saojosan\\Documents\\Lab Maker\\copilot\\ex1\\tracker_tx\\build"
-  ]
+  ],
+  "idf.currentSetup": "C:\\Users\\saojosan\\esp\\v5.5.2\\esp-idf"
 }

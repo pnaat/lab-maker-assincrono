@@ -12,19 +12,19 @@
 #include "nvs_flash.h"
 
 
-#define TXD    7
-#define RXD    6
+#define TXD    47
+#define RXD    48
 #define RTS    UART_PIN_NO_CHANGE
 #define CTS    UART_PIN_NO_CHANGE
 
 #define GPOWER   19
 
-#define UART_PORT       1 
+#define UART_PORT       UART_NUM_0 
 #define UART_BAUD_RATE  9600
 //#define UART_BAUD_RATE  57600
 //#define UART_BAUD_RATE  38400
 #define TASK_STACK      2048  
-
+    
 #define BUF_SIZE (1024)
 
 #define TIME_ZONE (-6)  

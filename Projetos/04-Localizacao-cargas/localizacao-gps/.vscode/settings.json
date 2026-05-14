@@ -14,5 +14,8 @@
     "--background-index",
     "--query-driver=**",
     "--compile-commands-dir=c:\\Users\\saojosan\\Documents\\Lab Maker\\lab-maker-assincrono\\Projetos\\04-Localizacao-cargas\\localizacao-gps\\build"
-  ]
+  ],
+  "idf.currentSetup": "C:\\Users\\saojosan\\esp\\v5.5.2\\esp-idf",
+  "idf.flashType": "UART",
+  "idf.portWin": "COM7"
 }
