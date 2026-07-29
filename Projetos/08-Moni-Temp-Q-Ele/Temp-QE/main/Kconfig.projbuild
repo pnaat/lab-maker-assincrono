@@ -1,0 +1,35 @@
+menu "Example Configuration"
+    # in recent versions of ESP32s3 idf the ADC2 doesn't support continuous mode
+    # so we're always using ADC1 and only chosing the channel
+
+    config ESP_PTC_ADC_CHANNEL
+	int "PTC adc channel (only ADC1 is used)"
+        default 1
+	help
+	    PTC adc channel (0 to 9)
+
+    config ESP_WIFI_SSID
+	string "Wifi SSID"
+	help
+	    SSID of wifi network to be used
+
+    config ESP_WIFI_PASS
+	string "Wifi Password"
+	help
+	    Password of wifi network to be used
+
+    config ESP_MQTT_URL
+        string "Mqtt url"
+        help
+            Mqtt url using format: mqtt://ip_address:port_number
+
+    config ESP_MQTT_USER
+        string "MQTT user"
+        help
+            User used For MQTT authentication.
+
+    config ESP_MQTT_PASS
+        string "MQTT password"
+        help
+            User password used in authentication.
+endmenu

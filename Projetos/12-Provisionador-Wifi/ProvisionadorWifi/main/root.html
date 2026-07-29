@@ -1,0 +1,219 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <!-- Configuração de codificação de caracteres para aceitar acentos e ç -->
+    <meta charset="UTF-8">
+    
+    <!-- Garante responsividade: ajusta a largura da página ao tamanho da tela do celular/computador -->
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    
+    <title>ESP32 Portal</title>
+    
+    <!-- Bloco de Estilização Visual (CSS) -->
+    <style>
+        /* * = Seleciona todos os elementos. Define modelo de caixa e fonte padrão */
+        * { box-sizing: border-box; font-family: 'Segoe UI', Roboto, Arial, sans-serif; }
+        
+        /* Estilização do fundo da página e alinhamento do texto */
+        body { margin: 0; padding: 20px; background-color: #eef2f5; text-align: center; }
+        
+        /* Classe dos "Cards" (caixas brancas centrais onde ficam os controles) */
+        .card { 
+            background: white; 
+            padding: 24px; 
+            border-radius: 12px; 
+            max-width: 420px; 
+            margin: 0 auto 20px auto; 
+            box-shadow: 0 4px 12px rgba(0,0,0,0.08); /* Sombra suave */
+            transition: all 0.3s ease; /* Transição para animações suaves */
+        }
+
+        /* Banner topo dos cards (Ex: "Modo de Configuração") */
+        .status-header {
+            padding: 12px;
+            border-radius: 8px;
+            font-weight: bold;
+            margin-bottom: 20px;
+            color: white;
+            background-color: #ff9800; /* Laranja por padrão (Modo AP / Desconectado) */
+        }
+        /* Classe dinâmica adicionada via JS quando o ESP32 se conecta à rede local */
+        .status-header.connected { background-color: #2e7d32; } /* Verde */
+
+        /* Estilização dos campos de texto (SSID e Senha) */
+        input { 
+            width: 100%; 
+            padding: 12px; 
+            margin: 8px 0 16px 0; 
+            border: 1px solid #ccc; 
+            border-radius: 6px; 
+            font-size: 15px; 
+        }
+
+        /* Estilização padrão para todos os botões da página */
+        button { 
+            width: 100%; 
+            padding: 14px; 
+            border: none; 
+            border-radius: 6px; 
+            font-size: 16px; 
+            font-weight: bold; 
+            cursor: pointer; 
+            transition: background 0.2s;
+        }
+        /* Botão azul do formulário de envio */
+        .btn-primary { background-color: #1976d2; color: white; }
+        .btn-primary:hover { background-color: #1565c0; }
+
+        /* Cores dinâmicas para o botão do LED */
+        .btn-led-on { background-color: #2e7d32; color: white; }  /* Verde para indicar "Ligar" */
+        .btn-led-off { background-color: #c62828; color: white; } /* Vermelho para indicar "Desligar" */
+        
+        /* Pílula/Badge estilizada que mostra o endereço IP */
+        .ip-badge {
+            display: inline-block;
+            background: #e3f2fd;
+            color: #1565c0;
+            padding: 6px 12px;
+            border-radius: 20px;
+            font-weight: bold;
+            text-decoration: none;
+            margin-top: 8px;
+        }
+
+        /* Link/Atalho para expandir/ocultar as configurações de Wi-Fi */
+        .toggle-link {
+            display: block;
+            margin-top: 15px;
+            color: #1976d2;
+            font-size: 14px;
+            cursor: pointer;
+            text-decoration: underline;
+        }
+    </style>
+</head>
+<body>
+
+    <!-- ==================================================================== -->
+    <!-- MODO 1: PAINEL DE CONTROLE (Exibido somente quando o ESP32 está conectado ao Wi-Fi) -->
+    <!-- Inicia invisível (display: none) e o JavaScript ativa se data.connected for true -->
+    <!-- ==================================================================== -->
+    <div id="controlMode" class="card" style="display: none;">
+        <div class="status-header connected">Dispositivo Conectado</div>
+        
+        <!-- O JS insere o SSID do Wi-Fi aqui (ex: "Conectado a: MinhaRede") -->
+        <h2 id="networkName" style="margin-top: 0;">Rede Local</h2>
+        
+        <p style="color: #666; margin-bottom: 5px;">Acesse no navegador, quando conectado na sua rede configurada por:</p>
+        
+        <!-- O JS atualiza o link com o IP real obtido via DHCP pelo ESP32 -->
+        <a id="ipAddress" class="ip-badge" href="#" target="_blank">http://esp32.local</a>
+        <p style="color: #666; margin-bottom: 5px;">Ou acesse por: http://esp32.local </p>
+
+        <hr style="border: 0; border-top: 1px solid #eee; margin: 20px 0;">
+
+        <h3>Controle do LED</h3>
+        <!-- Botão aciona a função toggleLED() no JS ao clicar -->
+        <button id="btnLED" class="btn-led-off" onclick="toggleLED()">Carregando...</button>
+        <p id="ledStatusText" style="color: #666; font-size: 14px; margin-top: 10px;">Estado: --</p>
+
+        <!-- Botão/Link para reexibir o formulário e trocar de Wi-Fi sem resetar o dispositivo -->
+        <span class="toggle-link" onclick="toggleConfigForm()">⚙️ Alterar Configurações de Wi-Fi</span>
+    </div>
+
+    <!-- ==================================================================== -->
+    <!-- MODO 2: FORMULÁRIO DE CONFIGURAÇÃO WI-FI (Captive Portal) -->
+    <!-- Exibido por padrão ao ligar o ESP32 sem conexão salvando dados na NVS -->
+    <!-- ==================================================================== -->
+    <div id="configMode" class="card">
+        <div id="statusBanner" class="status-header">Modo de Configuração</div>
+        <h2 style="margin-top: 0;">Configurar Wi-Fi</h2>
+        <p style="color: #666; font-size: 14px;">Insira os dados da rede para conectar o ESP32.</p>
+        
+        <!-- Envia os dados via POST para a rota "/connect" tratada pelo servidor C do ESP32 -->
+        <form action="/connect" method="POST">
+            <input type="text" name="ssid" placeholder="Nome da rede (SSID)" required><br>
+            <input type="password" name="password" placeholder="Senha da rede"><br>
+            <button type="submit" class="btn-primary">Salvar e Conectar</button>
+        </form>
+    </div>
+
+    <!-- ==================================================================== -->
+    <!-- LÓGICA EM JAVASCRIPT (Sincronização assíncrona com o ESP32 via AJAX/Fetch) -->
+    <!-- ==================================================================== -->
+    <script>
+        // Flag/Controle para o usuário escolher visualizar o formulário Wi-Fi mesmo já estando conectado
+        let isConfigVisibleOverride = false;
+
+        // Função principal: faz uma requisição HTTP GET para o ESP32 no endpoint /status
+        function updateUI() {
+            fetch('/status')
+            .then(res => res.json()) // Converte a resposta texto/JSON do C para Objeto JS
+            .then(data => {
+                // Mapeamento dos elementos do HTML manipulados dinamicamente
+                const configMode = document.getElementById('configMode');
+                const controlMode = document.getElementById('controlMode');
+                const networkName = document.getElementById('networkName');
+                const ipAddress = document.getElementById('ipAddress');
+                const btnLED = document.getElementById('btnLED');
+                const ledStatusText = document.getElementById('ledStatusText');
+
+                // CASO 1: O ESP32 reporta que conseguiu se conectar ao roteador doméstico
+                if (data.connected) {
+                    controlMode.style.display = "block"; // Exibe o card de controle do LED
+
+                    networkName.innerText = "Conectado a: " + data.ssid;
+                    ipAddress.innerText = "http://" + data.ip;
+                    ipAddress.href = "http://" + data.ip;
+
+                    // Gerencia a visibilidade do formulário de configuração Wi-Fi
+                    if (isConfigVisibleOverride) {
+                        configMode.style.display = "block";
+                        document.getElementById('statusBanner').innerText = "Reconfigurar Wi-Fi";
+                    } else {
+                        configMode.style.display = "none"; // Oculta a tela de Wi-Fi se conectado
+                    }
+
+                    // Sincroniza a interface com o estado real da GPIO do LED (1 = Ligado, 0 = Desligado)
+                    if (data.led === 1) {
+                        btnLED.innerText = "DESLIGAR LED";
+                        btnLED.className = "btn-led-off";
+                        ledStatusText.innerText = "Estado atual: LIGADO";
+                    } else {
+                        btnLED.innerText = "LIGAR LED";
+                        btnLED.className = "btn-led-on";
+                        ledStatusText.innerText = "Estado atual: DESLIGADO";
+                    }
+                } 
+                // CASO 2: O ESP32 está desconectado ou operando em modo Access Point / Captive Portal
+                else {
+                    configMode.style.display = "block"; // Força a exibição apenas do formulário de Wi-Fi
+                    controlMode.style.display = "none";
+                    document.getElementById('statusBanner').innerText = "Modo de Configuração";
+                }
+            })
+            .catch(err => console.error("Erro ao ler status:", err)); // Log de segurança em caso de timeout
+        }
+
+        // Função disparada ao clicar no botão do LED
+        function toggleLED() {
+            // Envia um comando POST para a rota "/toggle-led" sem recarregar a página
+            fetch('/toggle-led', { method: 'POST' })
+            .then(res => res.json())
+            .then(() => updateUI()); // Atualiza a tela imediatamente após o servidor processar a mudança
+        }
+
+        // Alterna o estado de exibição do formulário quando o usuário clica em "Alterar Configurações de Wi-Fi"
+        function toggleConfigForm() {
+            isConfigVisibleOverride = !isConfigVisibleOverride;
+            updateUI();
+        }
+
+        // Executa a verificação assim que a página é aberta
+        updateUI();
+
+        // Polling: Reexecuta a consulta a cada 2000ms (2 segundos) para manter o estado atualizado em tempo real
+        setInterval(updateUI, 2000);
+    </script>
+</body>
+</html>

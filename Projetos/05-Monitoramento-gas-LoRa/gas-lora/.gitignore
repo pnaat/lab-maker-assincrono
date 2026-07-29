@@ -1,0 +1,9 @@
+# VS Code
+.vscode
+
+# cmake
+build/
+
+dependencies.lock
+
+.clangd

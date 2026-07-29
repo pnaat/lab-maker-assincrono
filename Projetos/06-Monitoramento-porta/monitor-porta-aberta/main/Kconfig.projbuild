@@ -1,0 +1,56 @@
+menu "Example Configuration"
+    config GPIO_DOOR
+	int "door sensor gpio"
+        default 21
+	help
+	    door sensor gpio used to monitor the door
+
+    config GPIO_BUZZER
+        int "buzzer gpio"
+        default 19
+	help
+	    buzzer gpio to excite the alarm buzzer
+
+    config DOOR_ACTIVE_HIGH
+        int "door sensor activation level high"
+        default 1
+	help
+	    door sensor activation level: high = 1, low = 0
+
+    config DOOR_DEBOUNCE_MS
+        int "debounce time in ms"
+        default 30
+	help
+	    Estabilization time em ms
+
+    config OPEN_ALARM_SEC
+        int "Aperture time in seconds"
+        default 60
+	help
+	    Aperture time in seconds
+
+    config ESP_WIFI_SSID
+	string "Wifi SSID"
+	help
+	    SSID of wifi network to be used
+
+    config ESP_WIFI_PASS
+	string "Wifi Password"
+	help
+	    Password of wifi network to be used
+
+    config ESP_MQTT_URL
+        string "Mqtt url"
+        help
+            Mqtt url using format: mqtt://ip_address:port_number
+
+    config ESP_MQTT_USER
+        string "MQTT user"
+        help
+            User used For MQTT authentication.
+
+    config ESP_MQTT_PASS
+        string "MQTT password"
+        help
+            User password used in authentication.
+endmenu
