@@ -1,0 +1,15 @@
+{
+  "idf.openOcdConfigs": [
+    "board/esp32s3-builtin.cfg"
+  ],
+  "idf.customExtraVars": {
+    "IDF_TARGET": "esp32s3"
+  },
+  "clangd.path": "C:\\Users\\saojosan\\.espressif\\tools\\esp-clang\\esp-19.1.2_20250312\\esp-clang\\bin\\clangd.exe",
+  "clangd.arguments": [
+    "--background-index",
+    "--query-driver=**",
+    "--compile-commands-dir=c:\\Users\\saojosan\\Documents\\Lab Maker\\copilot\\ex1\\tracker_tx\\build"
+  ],
+  "idf.currentSetup": "C:\\Users\\saojosan\\esp\\v5.5.2\\esp-idf"
+}
